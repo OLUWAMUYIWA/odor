@@ -5,21 +5,40 @@ import (
 	"io"
 )
 
+type ParserErr struct {
+	str   string
+	inner error
+}
+
+func (e *ParserErr) Error() string {
+	return fmt.Sprintf("Error While Parsing: %s due to: %s", e.str, e.inner)
+}
+
+var (
+	FileEndErr *ParserErr = &ParserErr{str: "no more byte to read"}
+)
+
+func (e *ParserErr) Unwrap() error {
+	return e.inner
+}
+
 type Parser struct {
 	b   []byte
 	pos int
 	len int
 }
 
-func (p *Parser) Init(r io.ReadCloser) error {
+func InitParser(r io.ReadCloser) (*Parser, error) {
+
+	p := &Parser{}
 	b, err := io.ReadAll(r)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	p.b = b
 	p.pos = 0
 	p.len = len(b)
-	return nil
+	return p, nil
 }
 
 func (p *Parser) Last() bool {
@@ -31,7 +50,7 @@ func (p *Parser) Pos() int {
 
 func (p *Parser) ReadByte() (byte, error) {
 	if p.Last() {
-		return 0, fmt.Errorf("nothing more to read")
+		return 0, FileEndErr
 	}
 	ret := p.b[p.pos]
 	p.pos++

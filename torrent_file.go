@@ -1,8 +1,10 @@
 package main
 
-func nibble(p *Parser) (byte, error) {
-	return p.ReadByte()
-}
+import (
+	"errors"
+	"fmt"
+	"io"
+)
 
 type Info struct {
 	name     []byte
@@ -17,3 +19,46 @@ type Torrent struct {
 	info     Info
 }
 
+func NewTorrent() *Torrent {
+	return &Torrent{}
+}
+
+func (t *Torrent) Decode(r io.ReadCloser) error {
+	parser, err := InitParser(r)
+	if err != nil {
+		return fmt.Errorf("Could not decode torrent file:  %w", err)
+	}
+	for {
+		b, err := parser.ReadByte()
+		if err != nil {
+			if errors.Is(err, FileEndErr) { //nothing more to read. file has ended
+				//comeback
+
+			}
+		}
+		switch {
+		case IsInt(b):
+		case b == ':':
+		case b == 'i':
+		case b == 'd':
+		case b == 'e':
+		case b == 'l':
+		default:
+		}
+	}
+	defer r.Close()
+	return nil
+}
+
+func (t *Torrent) Encode() ([]byte, error) {
+	return nil, nil
+}
+
+func IsInt(b byte) bool {
+	switch b {
+	case '1', '2', '3', '4', '5', '6', '7', '8', '9', '0':
+		return true
+	default:
+		return false
+	}
+}
