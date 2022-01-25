@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"github.com/OLUWAMUYIWA/odor/parsec"
 )
 
 type ParserErr struct {
@@ -65,5 +66,7 @@ func (p *Parser) Peep() (byte, error) {
 	return p.b[p.pos], nil
 }
 func nibble(p *Parser) (byte, error) {
+	par := parsec.Digit()
+	fmt.Print(par)
 	return p.ReadByte()
 }

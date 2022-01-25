@@ -6,6 +6,7 @@ package parsec
 
 import (
 	"container/list"
+	"fmt"
 	"strconv"
 	"strings"
 	"unicode"
@@ -13,7 +14,7 @@ import (
 )
 
 //Parsec is a basic parser function. It takes an imput and returns PResult as result.
-type Parsec func(in ParserInput) PResult
+type Parsec func (in ParserInput) PResult
 
 //Predicate is a function that takes a rune and performs some computation, returning a true/false result
 //this result is useful when the predicate is used a a function argument is a higher order function.
@@ -26,7 +27,7 @@ type Predicate func(r rune) bool
 //without the first part. It works like a `Lisp`
 type ParserInput interface {
 	Car() rune //when it is called, it returns the current rune without advancing the index
-	Cdr() ParserInput
+	Cdr() ParserInput //returns the remainder of the input after the first one has been removed
 	Empty() bool
 }
 
@@ -36,22 +37,38 @@ type ParserInput interface {
 type PResult struct {
 	result interface{}
 	rem    ParserInput
+	err error
 }
 
+type ParsecErr struct {
+	context string
+	inner error
+}
+
+func (e *ParsecErr) Error() string {
+	return fmt.Sprintf("Error: %s\n Reason: %s", e.context, e.inner)
+}
+
+func (e *ParsecErr) Unwrap() error {
+	return e.inner
+}
+
+
 ////////SIMPLE PARSERS
-//isA is the simplest parser, it checks if a rune matches the next rune in the input.
+// IsA is the simplest parser, it checks if a rune matches the next rune in the input.
 func IsA(r rune) Parsec {
-	return func(in ParserInput) PResult {
-		if !in.Empty() && r == in.Car() {
+	return func (in ParserInput) PResult {
+		if !in.Empty() && r == in.Car() { 
 			return PResult{r, in.Cdr()}
 		}
+
 		return PResult{
 			nil, in,
 		}
 	}
 }
 
-//isNot is the complete opposite of isA.
+// IsNot is the complete opposite of IsA.
 func IsNot(r rune) Parsec {
 	return func(in ParserInput) PResult {
 		if !in.Empty() && r == in.Car() {
@@ -405,30 +422,84 @@ func Str(str string) Parsec {
 	}
 }
 
+// Many0 will take many as many reps of a parser, even zero 
 func (p Parsec) Many0() Parsec {
 	return func(in ParserInput) PResult {
-
+		res := PResult{list.New(), in}
+		for !res.rem.Empty() {
+			out := p(res.rem)
+			if out.result == nil {
+				return res
+			}
+			res.result.(*list.List).PushBack(out.result)
+			res.rem = out.rem
+		}
+		return res
 	}
 }
 
+
+// Many1 is like Maany0, but must pass at least once 
 func (p Parsec) Many1() Parsec {
 	return func(in ParserInput) PResult {
-
+		res := PResult{list.New(), in}
+		first := p(in)
+		if first.result == nil {
+			return PResult{nil, in}
+		}
+		res.result.(*list.List).PushBack(first.result)
+		res.rem = first.rem
+		for !res.rem.Empty() {
+			out := p(res.rem)
+			if out.result == nil {
+				return res
+			}
+			res.result.(*list.List).PushBack(out.result)
+			res.rem = out.rem
+		}
+		return res
 	}
 }
 
-func (first Parsec) And(sec Parsec) Parsec {
+func (p Parsec) Count(n int) Parsec {
 	return func(in ParserInput) PResult {
-
+		res := PResult{list.New(), in}
+		for i := 0; i < n; i++ {
+			out := p(res.rem)
+			if out.result == nil {
+				return PResult{nil, in}
+			}
+			res.result.(*list.List).PushBack(out.result)
+			res.rem = out.rem
+		}
+		return res
 	}
 }
 
-func (p Parsec) FoldMany0(f Predicate, acc Accumulator) {
-
+func (p Parsec) Then(sec Parsec) Parsec {
+	return func(in ParserInput) PResult {
+		res := p(in)
+		if res.rem.Empty() || res.result == nil { //firsst parser failed or there's no input left
+			return PResult{nil, in}
+		}
+		res = sec(res.rem)
+		return res
+	}
 }
 
-type Accumulator interface {
-	Acc(in interface{})
-	Yield() interface{}
-	Empty() bool
+
+func  FoldMany0[T any](p Parsec, init func() T, acc func (res, curr T) T ) Parsec {
+	return func(in ParserInput) PResult {
+		res := init()
+		copy := in
+		for !copy.Empty(){
+			curr := p(copy)
+			if curr.result == nil {
+				return PResult {res, copy}
+			}
+			copy = curr.rem
+			res = acc(res, curr.result.(T))
+		}
+		return PResult{res, copy}
+	}
 }
