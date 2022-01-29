@@ -11,27 +11,23 @@ type ParsecErr struct {
 	inner error
 }
 
-type ParserInput interface {
-	Car() rune //when it is called, it returns the current rune without advancing the index
-	Cdr() ParserInput //returns the remainder of the input after the first one has been removed
-	Empty() bool
-}
 
-type Input struct {
+
+type TestInput struct {
 	in []rune
 }
 
-func (i *Input) Car() rune {
+func (i *TestInput) Car() rune {
 	return (*i).in[0]
 }
 
-func (i *Input) Cdr() *Input {
-	return &Input {
+func (i *TestInput) Cdr() parsec.ParserInput {
+	return &TestInput {
 		in: (*i).in[1:],
 	}
 }
 
-func (i *Input) Empty() bool {
+func (i *TestInput) Empty() bool {
 	return len((*i).in) == 0
 }
 
@@ -42,7 +38,11 @@ var  (
 )
 
 func TestIsA(t *testing.T) {
-	actual := parsec.IsA('a')(&Input {
+	in := &TestInput {
 		in: []rune{'a', 'b', 'c'},
-	})
+	}
+	actual := parsec.IsA('a')(in)
+	if err,didErr := actual.Errored(); didErr {
+		t.Errorf("Errored: %s", err)
+	}
 }
