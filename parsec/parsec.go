@@ -90,7 +90,7 @@ func IsA(r rune) Parsec {
 }
 
 
-// IsNot is the complete opposite of IsA.
+// IsNot is the complete opposite of IsA. It returns the `not(r rune)` that it finds next. If it finds `r`, it fails 
 func IsNot(r rune) Parsec {
 	return func(in ParserInput) PResult {
 		if in.Empty() {
@@ -98,10 +98,10 @@ func IsNot(r rune) Parsec {
 		}
 
 		if r == in.Car() {
-			return PResult{nil, in, nil}
+			return PResult{nil, in, UnmatchedErr()}
 		}
 
-		return PResult{r, in.Cdr(), UnmatchedErr()}
+		return PResult{in.Car(), in.Cdr(), nil}
 	}
 }
 
