@@ -62,7 +62,7 @@ func UnmatchedErr() *ParsecErr {
 }
 
 func IncompleteErr() *ParsecErr {
-	return &ParsecErr{context: "There isn't enough data left fot this parser"}
+	return &ParsecErr{context: "There isn't enough data left for this parser"}
 }
 
 var  (
@@ -106,7 +106,7 @@ func IsNot(r rune) Parsec {
 }
 
 // CharUTF* returns a parser which checks if this rune is a valid utf-8 character. thhis character could be any utf-8 symbol
-func CharUTF8(c rune) Parsec {
+func CharUTF8() Parsec {
 	return func(in ParserInput) PResult {
 		if in.Empty() {
 			return PResult{nil, in, IncompleteErr()}
@@ -151,7 +151,7 @@ func OneOf(any []rune) Parsec {
 	}
 }
 
-// Digit takes only utf-8 encoded runes and ensures they are decimal digits (0-9)
+// Digit takes only utf-8 encoded runes and ensures they are decimal digits (0-9). It returns a single digit
 func Digit() Parsec {
 	return func(in ParserInput) PResult {
 		
@@ -164,7 +164,7 @@ func Digit() Parsec {
 		//if curr is a unicode number
 		if utf8.ValidRune(curr) && unicode.IsDigit(curr) {
 			return PResult{
-				curr, in.Cdr(), nil,
+				int(curr - '0'), in.Cdr(), nil,
 			}
 		}
 
@@ -174,7 +174,7 @@ func Digit() Parsec {
 }
 
 // Letter takes only utf-8 encoded runes and ensures they are letters
-func Letter(c rune) Parsec {
+func Letter() Parsec {
 	return func(in ParserInput) PResult {
 		if in.Empty() {
 			return PResult{nil, in, IncompleteErr()}
@@ -534,7 +534,7 @@ func Chars(chars []rune) Parsec {
 		rem := in //remainder is first the entire input
 		
 		for _, c := range chars {
-			res := CharUTF8(c)(rem)
+			res := IsA(c)(rem)
 			if res.err != nil { //parser failed to match
 				return PResult{
 					nil, in, res. err, //let the error trickle up
