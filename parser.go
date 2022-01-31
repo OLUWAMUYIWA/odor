@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"github.com/OLUWAMUYIWA/odor/parsec"
+	"io"
 )
 
 type ParserErr struct {

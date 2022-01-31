@@ -14,7 +14,7 @@ import (
 )
 
 //Parsec is a basic parser function. It takes an imput and returns PResult as Result.
-type Parsec func (in ParserInput) PResult
+type Parsec func(in ParserInput) PResult
 
 //Predicate is a function that takes a rune and performs some computation, returning a true/false result
 //this result is useful when the predicate is used a a function argument is a higher order function.
@@ -26,7 +26,7 @@ type Predicate func(r rune) bool
 //Cdr OTOH, while also not changing the internal state of the implementer, returns another copy of the implementer
 //without the first part. It works like a `Lisp`
 type ParserInput interface {
-	Car() rune //when it is called, it returns the current rune without advancing the index
+	Car() rune        //when it is called, it returns the current rune without advancing the index
 	Cdr() ParserInput //returns the remainder of the input after the first one has been removed
 	Empty() bool
 }
@@ -37,16 +37,16 @@ type ParserInput interface {
 type PResult struct {
 	Result interface{}
 	rem    ParserInput
-	err error
+	err    *ParsecErr
 }
 
 func (r *PResult) Errored() (error, bool) {
-	return r.err, r.err  != nil
+	return r.err, r.err != nil
 }
 
 type ParsecErr struct {
 	context string
-	inner error
+	inner   error
 }
 
 func (e *ParsecErr) Error() string {
@@ -65,22 +65,23 @@ func IncompleteErr() *ParsecErr {
 	return &ParsecErr{context: "There isn't enough data left for this parser"}
 }
 
-var  (
-	Unmatched *ParsecErr = &ParsecErr{context: "Parser Unmatched"}
-	Incomplete *ParsecErr = &ParsecErr{context: "There isn't enough data left fot this parser"}
-	PredicateFailed *ParsecErr=  &ParsecErr{context: "The predicate failed without return ing anything"}
+var (
+	Unmatched  *ParsecErr = &ParsecErr{context: "Parser Unmatched"}
+	Incomplete *ParsecErr = &ParsecErr{context: "There isn't enough data left for this parser"}
+
+	PredicateFailed *ParsecErr = &ParsecErr{context: "The predicate failed without returning anything"}
 )
 
 ////////SIMPLE PARSERS
 // IsA is the simplest parser, it checks if a rune matches the next rune in the input.
 func IsA(r rune) Parsec {
-	return func (in ParserInput) PResult {
+	return func(in ParserInput) PResult {
 		if in.Empty() {
 			return PResult{nil, in, IncompleteErr()}
 		}
 
-		if r == in.Car() { 
-			return PResult{r,  in.Cdr(), nil}
+		if r == in.Car() {
+			return PResult{r, in.Cdr(), nil}
 		}
 
 		return PResult{
@@ -89,8 +90,7 @@ func IsA(r rune) Parsec {
 	}
 }
 
-
-// IsNot is the complete opposite of IsA. It returns the `not(r rune)` that it finds next. If it finds `r`, it fails 
+// IsNot is the complete opposite of IsA. It returns the `not(r rune)` that it finds next. If it finds `r`, it fails
 func IsNot(r rune) Parsec {
 	return func(in ParserInput) PResult {
 		if in.Empty() {
@@ -113,8 +113,8 @@ func CharUTF8() Parsec {
 		}
 
 		curr := in.Car()
-		
-		if  utf8.ValidRune(curr) {
+
+		if utf8.ValidRune(curr) {
 			return PResult{
 				curr, in.Cdr(), nil,
 			}
@@ -123,7 +123,6 @@ func CharUTF8() Parsec {
 		return PResult{nil, in, UnmatchedErr()}
 	}
 }
-
 
 //OneOf returns a perser which checks if the next rune matches one of any given tunes
 func OneOf(any []rune) Parsec {
@@ -154,7 +153,7 @@ func OneOf(any []rune) Parsec {
 // Digit takes only utf-8 encoded runes and ensures they are decimal digits (0-9). It returns a single digit
 func Digit() Parsec {
 	return func(in ParserInput) PResult {
-		
+
 		if in.Empty() {
 			return PResult{nil, in, IncompleteErr()}
 		}
@@ -181,7 +180,7 @@ func Letter() Parsec {
 		}
 
 		curr := in.Car()
-		if  utf8.ValidRune(curr) && unicode.IsLetter(curr) {
+		if utf8.ValidRune(curr) && unicode.IsLetter(curr) {
 			return PResult{
 				curr,
 				in.Cdr(),
@@ -198,8 +197,8 @@ func Letter() Parsec {
 
 /////REPETITIONS
 
-//Take eats up `n` number of runes. if it doesnt get up to `n` number of runes, it fails. It retursn a list of runes as Result
-func Take(n int) Parsec {
+//TakeN eats up `n` number of runes. if it doesnt get up to `n` number of runes, it fails. It retursn a list of runes as Result
+func TakeN(n int) Parsec {
 
 	return func(in ParserInput) PResult {
 
@@ -214,7 +213,7 @@ func Take(n int) Parsec {
 		rem := in //rem needs to have input copied into it because we want to retain the full input, in case of a failure where we return the entire input
 		res := list.New()
 
-		for i := 0; i < n-1; i++ { 
+		for i := 0; i < n; i++ {
 			if rem.Empty() { //we exhausted the input before taking all we wanted
 				return PResult{
 					nil,
@@ -264,7 +263,7 @@ func TakeTill(f Predicate) Parsec {
 
 			if f(curr) { //if the predicate returns true, we're done
 				if res.Len() == 0 { //we gained nothing from the parser
-					return PResult {
+					return PResult{
 						nil,
 						in,
 						PredicateFailed,
@@ -283,7 +282,6 @@ func TakeTill(f Predicate) Parsec {
 			curr = rem.Car()
 		}
 
-		
 		return PResult{
 			res,
 			rem,
@@ -292,7 +290,7 @@ func TakeTill(f Predicate) Parsec {
 	}
 }
 
-// TakeWhile keeps eating runes while Pedicate returns true. Returns a list of runes. 
+// TakeWhile keeps eating runes while Pedicate returns true. Returns a list of runes.
 // If no rune makes it into the results, `TakeWhile` returns an error
 func TakeWhile(f Predicate) Parsec {
 
@@ -332,7 +330,7 @@ func TakeWhile(f Predicate) Parsec {
 
 // Terminated asks if the first argument `match` is `followed` immediately by the second one `post`
 // Terminated takes `strings` and not runes. This makes it quite easier to use with string-based protocols
-// The Result is the first one, the `match`, because `Termnated` assumes that that is the one we're interested in. 
+// The Result is the first one, the `match`, because `Termnated` assumes that that is the one we're interested in.
 func Terminated(match, post string) Parsec {
 
 	return func(in ParserInput) PResult {
@@ -347,7 +345,7 @@ func Terminated(match, post string) Parsec {
 
 		rem := in
 		matchRunes, postRunes := []rune(match), []rune(post) //create rune slices from the strings
-		
+
 		//we need two loops, ne for the first string, the second for the other.
 		//If we fail anywhere in running through the two loops, we fail out immediately
 
@@ -371,7 +369,7 @@ func Terminated(match, post string) Parsec {
 			}
 
 			rem = rem.Cdr()
-			
+
 		}
 
 		//second loop
@@ -395,7 +393,7 @@ func Terminated(match, post string) Parsec {
 			}
 
 			rem = rem.Cdr()
-			
+
 		}
 
 		return PResult{
@@ -406,7 +404,7 @@ func Terminated(match, post string) Parsec {
 	}
 }
 
-//Preceded is like `Terminated`, only reversed. 
+// Preceded is like `Terminated`, only reversed.
 // It asks if `match` is preceded by `pre`, and returns `match` as Result if it does, and a nil Result and error if it doesn't
 func Preceded(match, pre string) Parsec {
 	return func(in ParserInput) PResult {
@@ -423,7 +421,7 @@ func Preceded(match, pre string) Parsec {
 
 		//first loop, for the `pre` argument
 		for _, r := range preRunes {
-			
+
 			if rem.Empty() { //input empties without us eating all the runes we want
 				return PResult{
 					nil,
@@ -445,7 +443,7 @@ func Preceded(match, pre string) Parsec {
 
 		//second loop, for the `match` argument
 		for _, r := range matchRunes {
-			
+
 			if rem.Empty() { //input empties without us eating all the runes we want
 				return PResult{
 					nil,
@@ -463,7 +461,7 @@ func Preceded(match, pre string) Parsec {
 				}
 			}
 			rem = rem.Cdr()
-			
+
 		}
 
 		return PResult{
@@ -477,7 +475,7 @@ func Preceded(match, pre string) Parsec {
 // Number asks if it can obtain a contiguous set of digits from the input stream
 func Number() Parsec {
 	return func(in ParserInput) PResult {
-		
+
 		if in.Empty() {
 			return PResult{
 				nil,
@@ -490,7 +488,7 @@ func Number() Parsec {
 		numbers := []rune{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'}
 		digs := OneOf(numbers)
 		rem := in
-		var e error
+		var e *ParsecErr
 		for !rem.Empty() {
 			res := digs(rem)
 			if res.err == nil {
@@ -532,12 +530,12 @@ func Chars(chars []rune) Parsec {
 		}
 
 		rem := in //remainder is first the entire input
-		
+
 		for _, c := range chars {
 			res := IsA(c)(rem)
 			if res.err != nil { //parser failed to match
 				return PResult{
-					nil, in, res. err, //let the error trickle up
+					nil, in, res.err, //let the error trickle up
 				}
 			}
 			rem = res.rem
@@ -575,8 +573,7 @@ func (p Parsec) Many0() Parsec {
 	}
 }
 
-
-// Many1 is like `Many0`, but must pass at least once 
+// Many1 is like `Many0`, but must pass at least once
 func (p Parsec) Many1() Parsec {
 	return func(in ParserInput) PResult {
 		res := PResult{list.New(), in, nil}
@@ -584,7 +581,7 @@ func (p Parsec) Many1() Parsec {
 		//ensuring that at least one succeeds
 		first := p(in)
 		if first.err != nil {
-			return PResult{nil, in, first.err} //if it doesn't suceed, the Result contains the 
+			return PResult{nil, in, first.err} //if it doesn't suceed, the Result contains the
 		}
 		res.Result.(*list.List).PushBack(first.Result)
 		res.rem = first.rem
@@ -602,7 +599,7 @@ func (p Parsec) Many1() Parsec {
 	}
 }
 
-// Count applies the mother parser `n` times, if the parser fails before the n'th time, `Count` fails too. It retrns a list 
+// Count applies the mother parser `n` times, if the parser fails before the n'th time, `Count` fails too. It retrns a list
 // of the original parser's results
 
 func (p Parsec) Count(n int) Parsec {
@@ -639,17 +636,14 @@ func (p Parsec) Then(sec Parsec) Parsec {
 	}
 }
 
-
-
-
-func  FoldMany0[T any](p Parsec, init func() T, accFunc func (res, curr T) T ) Parsec {
+func FoldMany0[T any](p Parsec, init func() T, accFunc func(res, curr T) T) Parsec {
 	return func(in ParserInput) PResult {
-		res := init()  //T
+		res := init() //T
 		copy := in
-		for !copy.Empty(){
+		for !copy.Empty() {
 			curr := p(copy)
-			if curr.err != nil{
-				return PResult {res, copy, nil}
+			if curr.err != nil {
+				return PResult{res, copy, nil}
 			}
 			copy = curr.rem
 			res = accFunc(res, curr.Result.(T))
@@ -658,20 +652,20 @@ func  FoldMany0[T any](p Parsec, init func() T, accFunc func (res, curr T) T ) P
 	}
 }
 
-func  FoldMany1[T any](p Parsec, init func() T, accFunc func (res, curr T) T ) Parsec {
+func FoldMany1[T any](p Parsec, init func() T, accFunc func(res, curr T) T) Parsec {
 	return func(in ParserInput) PResult {
-		res := init()  //T
+		res := init() //T
 		copy := in
 		n := 0
-		for !copy.Empty(){
+		for !copy.Empty() {
 			curr := p(copy)
 			if curr.err != nil {
 				if n < 1 {
-					return PResult {nil, in, UnmatchedErr()} //parser failed without accumulating anything
+					return PResult{nil, in, UnmatchedErr()} //parser failed without accumulating anything
 				} else {
-					return PResult {res, copy, nil} //parser failed after accumutating at least once
+					return PResult{res, copy, nil} //parser failed after accumutating at least once
 				}
-				
+
 			}
 			copy = curr.rem
 			res = accFunc(res, curr.Result.(T))
