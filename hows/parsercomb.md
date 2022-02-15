@@ -74,3 +74,6 @@ type PResult struct {
 }
 ```
 It has three fields; here's the catch: `result`, the first field could be anything in `go`. That means we have to use type assertion to take out what stored inside the inteface value. This also means we must understand a little bit of the inner working of the library, at least wht kind of `result` each parser returns. Luckily, there are mostly just three types; either a `rune`, a `string`, or  a `list of runes`.
+
+
+### Functional Programming in Parsec

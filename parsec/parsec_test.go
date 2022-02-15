@@ -337,3 +337,55 @@ func TestPreceded(t *testing.T) {
 		t.Errorf("Should return: nil, but got: %s", ret)
 	}
 }
+
+func TestNumber(t *testing.T) {
+	in := &TestInput{
+		in: []rune{'2', '5', '6', 'd', 'o', 'g', 'h', 'k'},
+	}
+	expexted := 256
+	res := Number()(in)
+	if ans := res.Result.(int); ans != expexted {
+		t.Errorf("Expected %d, found %d", expexted, ans)
+	}
+
+	rem := res.rem.(*TestInput)
+	expectedRem := &TestInput{
+		in: in.in[3:],
+	}
+	if len(rem.in) != len(expectedRem.in) {
+		t.Errorf("expected : %d, foundL %d", len(expectedRem.in), len(rem.in))
+	}
+} 
+
+
+func TestChars(t *testing.T) {
+	in := &TestInput{
+		in: []rune{'2', '5', '6', 'd', 'o', 'g', 'h', 'k'},
+	}
+
+	chars := Chars([]rune{'2', '5', '6', 'd'})
+
+	res := chars(in)
+
+	expected := []rune{'2', '5', '6', 'd'}
+	result := res.Result.([]rune)
+	if e, did := res.Errored(); did {
+		t.Errorf("Error: %s", e)
+	}
+
+	for i, r := range expected {
+		if r != result[i] {
+			t.Errorf("Should be: %v, but is %v", r, result[i])
+		}
+	}
+}
+
+func TestStr(t *testing.T) {
+	str := "abeg"
+
+	in := &TestInput{
+		in: []rune{'a', 'b', 'e', 'g', 'o', 'g', 'h', 'k'},
+	}
+
+	strParsec := 
+}
