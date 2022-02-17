@@ -85,7 +85,7 @@ func IsA(r rune) Parsec {
 		}
 
 		return PResult{
-			nil, in, UnmatchedErr(),
+			nil, in, &ParsecErr{context: "Parser Unmatched"},
 		}
 	}
 }
@@ -550,7 +550,22 @@ func Chars(chars []rune) Parsec {
 func Str(str string) Parsec {
 	return func(in ParserInput) PResult {
 		if utf8.ValidString(str) {
-			return Chars([]rune(str))(in)
+			res := Chars([]rune(str))(in)
+			// v := reflect.ValueOf(res)
+
+			if chars, ok := res.Result.([]rune); ok {
+				return PResult{
+					string(chars),
+					res.rem,
+					nil,
+				}
+			} else {
+				return PResult{
+					nil,
+					in,
+					&ParsecErr{context: "Could not convert from chars to string"},
+				}
+			}
 		} else {
 			return PResult{nil, in, &ParsecErr{context: "String provided is not a valid string"}}
 		}
@@ -580,8 +595,9 @@ func (p Parsec) Many1() Parsec {
 
 		//ensuring that at least one succeeds
 		first := p(in)
-		if first.err != nil {
-			return PResult{nil, in, first.err} //if it doesn't suceed, the Result contains the
+		if e, did := first.Errored(); did {
+			res.err = e.(*ParsecErr)
+			return res
 		}
 		res.Result.(*list.List).PushBack(first.Result)
 		res.rem = first.rem
