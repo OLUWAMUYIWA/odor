@@ -72,6 +72,22 @@ var (
 	PredicateFailed *ParsecErr = &ParsecErr{context: "The predicate failed without returning anything"}
 )
 
+func Tag(r rune) Parsec {
+	return func(in ParserInput) PResult {
+		if in.Empty() {
+			return PResult{nil, in, IncompleteErr()}
+		}
+
+		if r == in.Car() {
+			return PResult{r, in.Cdr(), nil}
+		}
+
+		return PResult{
+			nil, in, &ParsecErr{context: "Parser Unmatched"},
+		}
+	}
+}
+
 ////////SIMPLE PARSERS
 // IsA is the simplest parser, it checks if a rune matches the next rune in the input.
 func IsA(r rune) Parsec {
@@ -472,6 +488,86 @@ func Preceded(match, pre string) Parsec {
 	}
 }
 
+// //comeback
+// func Guarded(pre, post string) Parsec {
+// 	return func(in ParserInput) PResult {
+
+// 		if in.Empty() {
+// 			return PResult{
+// 				nil,
+// 				in,
+// 				IncompleteErr(),
+// 			}
+// 		}
+// 		rem := in
+// 		preRunes, postRunes := []rune(pre), []rune(post) //create rune slices from the strings
+
+// 		//first loop, for the `pre` argument
+// 		for _, r := range preRunes {
+
+// 			if rem.Empty() { //input empties without us eating all the runes we want
+// 				return PResult{
+// 					nil,
+// 					in,
+// 					IncompleteErr(),
+// 				}
+// 			}
+
+// 			curr := rem.Car()
+// 			if curr != r {
+// 				return PResult{
+// 					nil,
+// 					in,
+// 					UnmatchedErr(),
+// 				}
+// 			}
+// 			rem = rem.Cdr()
+// 		}
+// 		var hit bool
+// 		var b bytes.Buffer
+// 		for {
+// 			if rem.Empty() { //input empties without us eating all the runes we want
+// 				return PResult{
+// 					nil,
+// 					in,
+// 					IncompleteErr(),
+// 				}
+// 			}
+// 			curr := rem.Car()
+
+// 		}
+
+// 		//second loop, for the `match` argument
+// 		for _, r := range postRunes {
+
+// 			if rem.Empty() { //input empties without us eating all the runes we want
+// 				return PResult{
+// 					nil,
+// 					in,
+// 					IncompleteErr(),
+// 				}
+// 			}
+
+// 			curr := rem.Car()
+// 			if curr != r {
+// 				return PResult{
+// 					nil,
+// 					in,
+// 					UnmatchedErr(),
+// 				}
+// 			}
+// 			rem = rem.Cdr()
+
+// 		}
+
+// 		return PResult{
+// 			match,
+// 			rem,
+// 			nil,
+// 		}
+// 	}
+// }
+
 // Number asks if it can obtain a contiguous set of digits from the input stream
 func Number() Parsec {
 	return func(in ParserInput) PResult {
@@ -489,16 +585,28 @@ func Number() Parsec {
 		digs := OneOf(numbers)
 		rem := in
 		var e *ParsecErr
+		first, neg := 0, false
 		for !rem.Empty() {
-			res := digs(rem)
-			if res.err == nil {
-				if s, ok := res.Result.(rune); ok {
-					numStr.WriteRune(s)
-					rem = rem.Cdr() // we could use either of `rem.Cdr()` or `res.rem` here because theyre thesame as the Parser `OneOf` eats only the `Car`
+			//first check if the first rune is a '-', then itll be negative
+			if first == 0 {
+				res := IsA('-')(rem)
+				if res.err != nil {
+					neg = true
 				}
+				first++
+
 			} else {
-				e = res.err
-				break
+				res := digs(rem)
+				if res.err == nil {
+					if s, ok := res.Result.(rune); ok {
+						numStr.WriteRune(s)
+						rem = rem.Cdr() // we could use either of `rem.Cdr()` or `res.rem` here because theyre thesame as the Parser `OneOf` eats only the `Car`
+					}
+				} else {
+					e = res.err
+					break
+				}
+
 			}
 		}
 
@@ -512,6 +620,9 @@ func Number() Parsec {
 		}
 
 		ans, _ := strconv.Atoi(numStr.String()) // there can never be an error.
+		if neg {
+			ans = -ans
+		}
 		return PResult{
 			ans,
 			rem,
@@ -644,7 +755,27 @@ func (p Parsec) Then(sec Parsec) Parsec {
 				IncompleteErr(),
 			}
 		}
-		if res.err != nil { //firsst parser failed or there's no input left
+		if res.err != nil { //first parser failed or there's no input left
+			return PResult{nil, in, UnmatchedErr()}
+		}
+		res = sec(res.rem)
+		return res
+	}
+}
+
+type Callback func(any, Parsec) PResult
+
+func (p Parsec) AndThen(sec Parsec) Parsec {
+	return func(in ParserInput) PResult {
+		res := p(in)
+		if res.rem.Empty() {
+			return PResult{
+				nil,
+				in,
+				IncompleteErr(),
+			}
+		}
+		if res.err != nil { //first parser failed or there's no input left
 			return PResult{nil, in, UnmatchedErr()}
 		}
 		res = sec(res.rem)
