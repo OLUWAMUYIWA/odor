@@ -27,14 +27,17 @@ type Message struct {
 	buffer *bytes.Buffer
 }
 
-type Payload struct {
-
-}
+type HaveIndex uint32
 
 type Bitfield []byte
 
 type MessageCont interface {
-	Payload | Bitfield 
+	HaveIndex | Bitfield 
+}
+
+type Payload struct {
+	index, begin, length uint32
+
 }
 
 func NewMessage(id MsgId, payload any) *Message {
@@ -56,7 +59,9 @@ func NewMessage(id MsgId, payload any) *Message {
 		{
 			m.id = uint8(Have)
 			l := uint32(5)
-			binary.Write(m.buffer, binary.BigEndian, l)
+			binary.Write(m.buffer, binary.BigEndian, &l)
+			id := uint8(Have)
+			binary.Write(m.buffer, binary.BigEndian, &id)
 			index, ok := payload.(uint32)
 			if !ok {
 				panic("should be called with a uint32")
@@ -65,15 +70,34 @@ func NewMessage(id MsgId, payload any) *Message {
 		}
 	case BitField:
 		{
-
+			p,ok := payload.(Payload)
+			if !ok {
+				panic("Expects a valid Payload object")
+			}
+			//length
+			binary.Write(m.buffer, binary.BigEndian, &(p.length))
+			id := uint8(BitField)
+			binary.Write(m.buffer, binary.BigEndian, &id)
+			// comeback
 		}
 	case Request:
 		{
+			l := uint32(13)
+			binary.Write(m.buffer, binary.BigEndian, &l)
+			id := uint8(Request)
+			binary.Write(m.buffer, binary.BigEndian, &id)
+			p,ok := payload.(Payload)
+			if !ok {
+				panic("Expects a valid Payload object ")
+			}
+			binary.Write(m.buffer, binary.BigEndian, &(p.index))
+			binary.Write(m.buffer, binary.BigEndian, &(p.begin))
+			binary.Write(m.buffer, binary.BigEndian, &(p.length))
 
 		}
 	case Piece:
 		{
-
+			
 		}
 	case Cancel:
 		{
