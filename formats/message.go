@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"io"
 	"math/rand"
+
 )
 
 type MsgId uint8
@@ -97,7 +98,7 @@ func NewMessage(id MsgId, payload any) *Message {
 		}
 	case Piece:
 		{
-			
+
 		}
 	case Cancel:
 		{
@@ -111,10 +112,31 @@ func NewMessage(id MsgId, payload any) *Message {
 	return m
 }
 
-func (m *Message) Marshall() io.Writer {
-	var b bytes.Buffer
+func (m *Message) Marshall(w io.Writer) error  {
+	_, err := io.Copy(w, m.buffer)
+	return err
+}
 
-	return &b
+
+func ParseMessage(r io.Reader) (*MsgId, []byte, error) {
+	lBuf := make([]byte, 4)
+	if _, err := io.ReadFull(r, lBuf); err != nil {
+		return nil, nil, err
+	}
+	l := binary.BigEndian.Uint32(lBuf)
+
+	//comeback check for keep-alive message
+
+	msg := make([]byte, l)
+	if _, err := io.ReadFull(r, msg); err != nil {
+		return nil, nil, err
+	}
+
+	id, payload  := MsgId(msg[0]), msg[1:]
+
+	idRef := &id
+
+	return idRef, payload, nil
 }
 
 const connectionID uint64 = 0x41727101980

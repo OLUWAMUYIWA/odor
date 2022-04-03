@@ -54,7 +54,7 @@ func ParseHandShake(r io.Reader) (*HandShake, error) {
 		return nil, err
 	}
 	if len(all) != 48+int(pstrLen) {
-		return nil, errors.New("Handshake message flaswe")
+		return nil, errors.New("Handshake message flawed")
 	}
 	h.pstr = string(all[:pstrLen])
 	//then the reserved 8 bytes
