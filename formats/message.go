@@ -33,7 +33,7 @@ type HaveIndex uint32
 type Bitfield []byte
 
 type MessageCont interface {
-	HaveIndex | Bitfield 
+	HaveIndex | Bitfield | Payload
 }
 
 type Payload struct {
