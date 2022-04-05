@@ -51,7 +51,7 @@ func TestIsA(t *testing.T) {
 		if resR != r {
 			t.Errorf("IsA isn't popping the right rune \n")
 		}
-		inTable[i] = res.rem.(*TestInput)
+		inTable[i] = res.Rem.(*TestInput)
 	}
 
 	if !reflect.DeepEqual(*inTable[0], TestInput{[]rune{'b', 'c'}}) {
@@ -75,8 +75,8 @@ func TestIsNot(t *testing.T) {
 	for i, r := range runes {
 		res := IsNot(r)(inTable[i])
 		resR := res.Result.(rune)
-		if res.err != nil {
-			t.Errorf("Errored: %s", res.err)
+		if res.Err != nil {
+			t.Errorf("Errored: %s", res.Err)
 		}
 		if resR == r {
 			t.Errorf("IsNot matches the said rune: %v instead of not doing so %v\n", resR, r)
@@ -97,7 +97,7 @@ func TestCharUTF8(t *testing.T) {
 				t.Errorf("Sould be unmatched error")
 			}
 		}
-		nonUTF8s = res.rem.(*TestInput)
+		nonUTF8s = res.Rem.(*TestInput)
 
 	}
 
@@ -110,7 +110,7 @@ func TestCharUTF8(t *testing.T) {
 		t.Errorf("should be nill, but is: %v", res.Result)
 	}
 
-	if !reflect.DeepEqual(*nonUTF8s, *(res.rem.(*TestInput))) {
+	if !reflect.DeepEqual(*nonUTF8s, *(res.Rem.(*TestInput))) {
 		t.Errorf("Should both be equal")
 	}
 }
@@ -128,11 +128,11 @@ func TestOneOf(t *testing.T) {
 		t.Errorf("Errored when it shouldn't: %s", e)
 	}
 
-	if reflect.DeepEqual(*(res.rem.(*TestInput)), in) {
+	if reflect.DeepEqual(*(res.Rem.(*TestInput)), in) {
 		t.Errorf("should not be equal beacuse it got reduced")
 	}
 
-	if !reflect.DeepEqual(TestInput{in: []rune{'e', 'f'}}, *(res.rem.(*TestInput))) {
+	if !reflect.DeepEqual(TestInput{in: []rune{'e', 'f'}}, *(res.Rem.(*TestInput))) {
 		t.Errorf("should  be equal beacuse it got reduced")
 	}
 }
@@ -149,7 +149,7 @@ func TestDigit(t *testing.T) {
 		if res.Result.(int) != exp {
 			t.Errorf("should be equal to the integers in expected. Should be: %d, but is %d", exp, res.Result.(int))
 		}
-		in = res.rem.(*TestInput)
+		in = res.Rem.(*TestInput)
 	}
 }
 
@@ -348,7 +348,7 @@ func TestNumber(t *testing.T) {
 		t.Errorf("Expected %d, found %d", expexted, ans)
 	}
 
-	rem := res.rem.(*TestInput)
+	rem := res.Rem.(*TestInput)
 	expectedRem := &TestInput{
 		in: in.in[3:],
 	}

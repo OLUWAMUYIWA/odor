@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"unicode"
 
 	"github.com/OLUWAMUYIWA/odor/parsec"
 )
@@ -41,9 +42,50 @@ func (b *BencInput) Empty() bool {
 	return true
 }
 
-func BStr() {
-	parsec.Number()
+func BencStr() parsec.Parsec{
+	return func(in parsec.ParserInput) parsec.PResult {
+		rem := in
+		if in.Empty() {
+			return parsec.PResult{
+				Result: nil,
+				Rem: in,
+				Err: parsec.IncompleteErr(),
+			}
+		}
+		num := parsec.Number()(rem)
+		if err, didErr := num.Errored(); didErr {
+			return parsec.PResult{Result: nil, Rem: in, Err: err.(*(parsec.ParsecErr)) }
+		} 
+		rem = num.Rem
+		_ = parsec.Tag(':')(rem)
+		rem = num.Rem
+		if err, didErr := num.Errored(); didErr {
+			return parsec.PResult{Result: nil, Rem: in, Err: err.(*(parsec.ParsecErr)) }
+		} 
+		res := parsec.StrN(num.Result.(int))(rem)
+		if err, didErr := res.Errored(); didErr {
+			return parsec.PResult{Result: nil, Rem: in, Err: err.(*(parsec.ParsecErr)) }
+		} 
+
+		return parsec.PResult{
+			Result: res.Result.(string),
+			Rem: res.Rem,
+			Err: nil,
+		}
+	}
 }
+
+// we still have to convert the list of runes to a number
+func BencInt() parsec.Parsec {
+	return parsec.GuardedWhile('i', 'e', func(r rune) bool {
+		return unicode.IsDigit(r)
+	})
+}
+
+func BencList() parsec.Parsec {
+
+}
+
 
 type Decoder struct {
 	r io.Reader
