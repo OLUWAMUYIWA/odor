@@ -72,6 +72,9 @@ var (
 	PredicateFailed *ParsecErr = &ParsecErr{context: "The predicate failed without returning anything"}
 )
 
+////////SIMPLE PARSERS
+// Tag is the simplest parser, it checks if a rune matches the next rune in the input.
+
 func Tag(r rune) Parsec {
 	return func(in ParserInput) PResult {
 		if in.Empty() {
@@ -88,23 +91,6 @@ func Tag(r rune) Parsec {
 	}
 }
 
-////////SIMPLE PARSERS
-// IsA is the simplest parser, it checks if a rune matches the next rune in the input.
-func IsA(r rune) Parsec {
-	return func(in ParserInput) PResult {
-		if in.Empty() {
-			return PResult{nil, in, IncompleteErr()}
-		}
-
-		if r == in.Car() {
-			return PResult{r, in.Cdr(), nil}
-		}
-
-		return PResult{
-			nil, in, &ParsecErr{context: "Parser Unmatched"},
-		}
-	}
-}
 
 // IsNot is the complete opposite of IsA. It returns the `not(r rune)` that it finds next. If it finds `r`, it fails
 func IsNot(r rune) Parsec {
@@ -761,6 +747,47 @@ func (p Parsec) Then(sec Parsec) Parsec {
 	}
 }
 
+// Alt tries a list of parsers and returns the result of the first successful one
+func Alt(ps ...Parsec) Parsec {
+	return func(in ParserInput) PResult {
+		for _, p := range ps {
+			rem := in
+			if res.Rem.Empty() {
+				return PResult{
+					nil,
+					in,
+					IncompleteErr(),
+				}
+		    }
+			res := p(in)
+			if err, didErr := res.Errored(); !didErr {
+				return res
+			}
+		}
+	}
+}
+
+// ThenDiscard is like Then, but discards the result of the second parser if it matches.
+func (p Parsec) ThenDiscard(sec Parsec) Parsec {
+	return func(in ParserInput) PResult {
+		res := p(in)
+		if res.Rem.Empty() {
+			return PResult{
+				nil,
+				in,
+				IncompleteErr(),
+			}
+		}
+		if res.Err != nil { //first parser failed or there's no input left
+			return PResult{nil, in, UnmatchedErr()}
+		}
+		res2 := sec(res.Rem)
+		if res2.Err != nil { //first parser failed or there's no input left
+			return PResult{nil, in, UnmatchedErr()}
+		}
+		return res
+	}
+}
 
 // Guarded uses `Tag` `TakeTillIncl` to take a list of runes that fill up the space between `left` and `right`
 //  result is a lst of runes
@@ -811,6 +838,7 @@ func GuardedWhile(left, right rune, p Predicate) Parsec {
 		}
 	}
 }
+
 
 // And joins n parsers. 
 // If the first one suceeds, it calls the next one. If it doesn't it returns an error

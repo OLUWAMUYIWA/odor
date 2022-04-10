@@ -83,7 +83,45 @@ func BencInt() parsec.Parsec {
 }
 
 func BencList() parsec.Parsec {
+	pre := parsec.Tag('l')
+	last := parsec.Tag('e')
+	manyStr := BencStr().Many0().ThenDiscard(last) //comeback the case of empty string
+	manyInt := BencInt().Many0().ThenDiscard(last)
+	benDict := BenDict().Many0().ThenDiscard(last)
+	return func(in parsec.ParserInput) parsec.PResult {
+		res := pre(in)
+		if err, didErr := res.Errored(); didErr {
+			return parsec.PResult{nil, in, err.(*parsec.ParsecErr)}
+		}
+		res = parsec.Alt(manyInt, manyStr, benDict)(res.Rem)
+		if _, didErr := res.Errored(); !didErr {
+			return res
+		} else {
+			ret := []any{}
 
+		}
+
+		//return parsec.PResult{nil, in, err.(*parsec.ParsecErr)}
+		return res
+	}
+
+}
+
+func BenDict() parsec.Parsec {
+	pre := parsec.Tag('d')
+	last := parsec.Tag('e')
+	key := BencStr()
+	str := BencStr()
+	num := BencInt()
+	return func(in parsec.ParserInput) parsec.PResult {
+		res := pre(in)
+		if err, didErr := res.Errored(); didErr {
+			return parsec.PResult{nil, in, err.(*parsec.ParsecErr)}
+		}
+
+		nonDictPs := parsec.Alt(num, str)
+
+	}
 }
 
 

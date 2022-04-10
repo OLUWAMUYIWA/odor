@@ -37,7 +37,7 @@ func (i *TestInput) String() string {
 	return s.String()
 }
 
-func TestIsA(t *testing.T) {
+func TestTag(t *testing.T) {
 	var inTable []*TestInput = []*TestInput{
 		{[]rune{'a', 'b', 'c'}},
 		{[]rune{'d', 'e', 'f'}},
@@ -46,10 +46,10 @@ func TestIsA(t *testing.T) {
 	expected := []rune{'a', 'd'}
 
 	for i, r := range expected {
-		res := IsA(r)(inTable[i])
+		res := Tag(r)(inTable[i])
 		resR := res.Result.(rune)
 		if resR != r {
-			t.Errorf("IsA isn't popping the right rune \n")
+			t.Errorf("Tag isn't popping the right rune \n")
 		}
 		inTable[i] = res.Rem.(*TestInput)
 	}
