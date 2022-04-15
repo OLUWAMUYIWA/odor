@@ -363,7 +363,7 @@ func TakeTillIncl(f Predicate) Parsec {
 	}
 }
 
-// TakeWhile keeps eating runes while Pedicate returns true. Returns a list of runes.
+// TakeWhile keeps eating runes while Pedicate returns true. Returns a slice of runes.
 // If no rune makes it into the results, `TakeWhile` returns an error
 func TakeWhile(f Predicate) Parsec {
 
@@ -377,15 +377,15 @@ func TakeWhile(f Predicate) Parsec {
 		}
 
 		rem := in
-		res := list.New()
+		res := []rune{}
 		curr := rem.Car()
 		for !rem.Empty() && f(curr) {
-			res.PushBack(curr)
+			res = append(res, curr)
 			rem = rem.Cdr()
 			curr = rem.Car()
 		}
 
-		if res.Len() == 0 {
+		if len(res) == 0 {
 			return PResult{
 				nil,
 				in,
@@ -568,7 +568,7 @@ func Number() Parsec {
 		for !rem.Empty() {
 			//first check if the first rune is a '-', then itll be negative
 			if first == 0 {
-				res := IsA('-')(rem)
+				res := Tag('-')(rem)
 				if res.Err != nil {
 					neg = true
 				}
@@ -624,7 +624,7 @@ func Chars(chars []rune) Parsec {
 		rem := in //remainder is first the entire input
 
 		for _, c := range chars {
-			res := IsA(c)(rem)
+			res := Tag(c)(rem)
 			if res.Err != nil { //parser failed to match
 				return PResult{
 					nil, in, res.Err, //let the error trickle up
@@ -668,13 +668,16 @@ func Str(str string) Parsec {
 // Many0 will take many as many reps of a parser, even zero. At the first failure of the parser, it returns witout erroring
 func (p Parsec) Many0() Parsec {
 	return func(in ParserInput) PResult {
-		res := PResult{list.New(), in, nil}
+		resSlice := make([]any, 0)
+		res := PResult{resSlice, in, nil}
 		for !res.Rem.Empty() {
 			out := p(res.Rem)
 			if out.Err != nil {
 				return res
 			}
-			res.Result.(*list.List).PushBack(out.Result) //coerce the `interface{}` Result value into a `*list.List` value
+			// res.Result.(*list.List).PushBack(out.Result) //coerce the `interface{}` Result value into a `*list.List` value
+			resSlice = append(resSlice, out.Result)
+			res.Result = resSlice
 			res.Rem = out.Rem
 		}
 		return res
@@ -684,15 +687,16 @@ func (p Parsec) Many0() Parsec {
 // Many1 is like `Many0`, but must pass at least once
 func (p Parsec) Many1() Parsec {
 	return func(in ParserInput) PResult {
-		res := PResult{list.New(), in, nil}
-
+		resSlice := make([]any, 0)
+		res := PResult{resSlice, in, nil}
 		//ensuring that at least one succeeds
 		first := p(in)
 		if e, did := first.Errored(); did {
 			res.Err = e.(*ParsecErr)
 			return res
 		}
-		res.Result.(*list.List).PushBack(first.Result)
+		resSlice = append(resSlice, first.Result)
+		res.Result = resSlice
 		res.Rem = first.Rem
 
 		//now to the loop
@@ -701,7 +705,8 @@ func (p Parsec) Many1() Parsec {
 			if out.Err != nil {
 				return res
 			}
-			res.Result.(*list.List).PushBack(out.Result)
+			resSlice = append(resSlice, out.Result)
+			res.Result = resSlice
 			res.Rem = out.Rem
 		}
 		return res
@@ -750,9 +755,9 @@ func (p Parsec) Then(sec Parsec) Parsec {
 // Alt tries a list of parsers and returns the result of the first successful one
 func Alt(ps ...Parsec) Parsec {
 	return func(in ParserInput) PResult {
+		rem := in
 		for _, p := range ps {
-			rem := in
-			if res.Rem.Empty() {
+			if rem.Empty() {
 				return PResult{
 					nil,
 					in,
@@ -760,9 +765,15 @@ func Alt(ps ...Parsec) Parsec {
 				}
 		    }
 			res := p(in)
-			if err, didErr := res.Errored(); !didErr {
+			if _, didErr := res.Errored(); !didErr {
 				return res
 			}
+		}
+
+		return PResult{
+			nil,
+			in,
+			UnmatchedErr(),
 		}
 	}
 }

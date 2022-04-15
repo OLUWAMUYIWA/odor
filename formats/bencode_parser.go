@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"strconv"
 	"unicode"
 
 	"github.com/OLUWAMUYIWA/odor/parsec"
@@ -52,34 +53,40 @@ func BencStr() parsec.Parsec{
 				Err: parsec.IncompleteErr(),
 			}
 		}
-		num := parsec.Number()(rem)
-		if err, didErr := num.Errored(); didErr {
+		numRes := parsec.Number()(rem)
+		if err, didErr := numRes.Errored(); didErr {
 			return parsec.PResult{Result: nil, Rem: in, Err: err.(*(parsec.ParsecErr)) }
 		} 
-		rem = num.Rem
-		_ = parsec.Tag(':')(rem)
-		rem = num.Rem
-		if err, didErr := num.Errored(); didErr {
+		rem = numRes.Rem
+		resColon := parsec.Tag(':')(rem)
+		
+		if err, didErr := resColon.Errored(); didErr {
 			return parsec.PResult{Result: nil, Rem: in, Err: err.(*(parsec.ParsecErr)) }
 		} 
-		res := parsec.StrN(num.Result.(int))(rem)
+		rem = resColon.Rem
+		res := parsec.StrN(numRes.Result.(int))(rem)
 		if err, didErr := res.Errored(); didErr {
 			return parsec.PResult{Result: nil, Rem: in, Err: err.(*(parsec.ParsecErr)) }
 		} 
 
-		return parsec.PResult{
-			Result: res.Result.(string),
-			Rem: res.Rem,
-			Err: nil,
-		}
+		return res
 	}
 }
 
-// we still have to convert the list of runes to a number
+
 func BencInt() parsec.Parsec {
-	return parsec.GuardedWhile('i', 'e', func(r rune) bool {
+	guardedInt := parsec.GuardedWhile('i', 'e', func(r rune) bool {
 		return unicode.IsDigit(r)
 	})
+	return func(in parsec.ParserInput) parsec.PResult {
+		res := guardedInt(in)
+		// the internal TaeWhile used to implement GuardedWhile returns a slice of runes as result
+		digits := res.Result.([]rune)
+		digitsStr := string(digits)
+		num, _ := strconv.Atoi(digitsStr)
+		res.Result = num
+		return res
+	}
 }
 
 func BencList() parsec.Parsec {
@@ -96,9 +103,22 @@ func BencList() parsec.Parsec {
 		res = parsec.Alt(manyInt, manyStr, benDict)(res.Rem)
 		if _, didErr := res.Errored(); !didErr {
 			return res
-		} else {
-			ret := []any{}
+		} else { //might be a list of lists
+			l := []any{}
+			listsRes := parsec.PResult{l, in, nil}
 
+			for {
+				res = BencList()(in)
+				if err, didErr := res.Errored(); didErr {
+					return parsec.PResult{
+						nil,
+						in,
+						err.(*parsec.ParsecErr),
+					}
+				}
+				l = append(l, res.Result)
+				listsRes.Rem = res.Rem
+			}
 		}
 
 		//return parsec.PResult{nil, in, err.(*parsec.ParsecErr)}
@@ -113,16 +133,37 @@ func BenDict() parsec.Parsec {
 	key := BencStr()
 	str := BencStr()
 	num := BencInt()
+	list := BencList()
+	nonDicts := parsec.Alt(num, str, list)
 	return func(in parsec.ParserInput) parsec.PResult {
+		dict := map[string]any{}
 		res := pre(in)
 		if err, didErr := res.Errored(); didErr {
 			return parsec.PResult{nil, in, err.(*parsec.ParsecErr)}
 		}
 
-		nonDictPs := parsec.Alt(num, str)
+		for {
+			keyRes := key(in)
+			if _, didErr := keyRes.Errored(); didErr { // i.e. none of these parsers passed
+				break
+			}
+			k := keyRes.Result.(string)
+			v := nonDicts(in)
+			if _, didErr := v.Errored(); didErr { // i.e. none of these parsers passed
+				// we then try to parse it as a dictionary
+				v = BenDict()(keyRes.Rem)
 
+				if _, didErr := v.Errored(); didErr{
+					break
+				}
+			}
+			dict[k] = v
+		}
+		
 	}
 }
+
+
 
 
 type Decoder struct {

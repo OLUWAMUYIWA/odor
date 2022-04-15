@@ -411,9 +411,9 @@ func TestMany0(t *testing.T) {
 		in: []rune{'a', 'a', 'a', 'a', 'o', 'g', 'h', 'k'},
 	}
 
-	isA := IsA('a')
-	many0_IsA := isA.Many0()
-	res := many0_IsA(in)
+	isA := Tag('a')
+	many0_Tag := isA.Many0()
+	res := many0_Tag(in)
 
 	if err, did := res.Errored(); did {
 		t.Errorf("Error: %s", err)
@@ -440,9 +440,9 @@ func TestMany0(t *testing.T) {
 		in: []rune{'a', 'a', 'a', 'a', 'o', 'g', 'h', 'k'},
 	}
 
-	isA = IsA('b')
-	many0_IsA = isA.Many0()
-	res = many0_IsA(in)
+	isA = Tag('b')
+	many0_Tag = isA.Many0()
+	res = many0_Tag(in)
 
 	if err, did := res.Errored(); did {
 		t.Errorf("Error: %s", err)
@@ -465,9 +465,9 @@ func TestMany1 (t *testing.T) {
 		in: []rune{'a', 'a', 'a', 'a', 'o', 'g', 'h', 'k'},
 	}
 
-	isA := IsA('a')
-	many0_IsA := isA.Many0()
-	res := many0_IsA(in)
+	isA := Tag('a')
+	many0_Tag := isA.Many0()
+	res := many0_Tag(in)
 
 	if err, did := res.Errored(); did {
 		t.Errorf("Error: %s", err)
@@ -497,9 +497,9 @@ func TestMany1Nil(t *testing.T) {
 		in: []rune{'a', 'a', 'a', 'a', 'o', 'g', 'h', 'k'},
 	}
 
-	isA := IsA('b')
-	many0_IsA := isA.Many0()
-	res := many0_IsA(in)
+	isA := Tag('b')
+	many0_Tag := isA.Many0()
+	res := many0_Tag(in)
 
 	if _, did := res.Errored(); !did {
 		t.Errorf(" Should have errored")
