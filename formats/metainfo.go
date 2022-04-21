@@ -24,7 +24,7 @@ type MetaInfo struct {
 	createdBy string
 	encoding string
 
-	infoHash Sha1
+	InfoHash Sha1
 }
 
 type Info struct {
@@ -70,7 +70,7 @@ func (m *MetaInfo) GetPeers(port uint16) ([]Peer, error) {
 		return nil, err
 	}
 	baseUrl.RawQuery = url.Values{
-		"info_hash": []string{string(m.infoHash[:])},
+		"info_hash": []string{string(m.InfoHash[:])},
 		"peer_id":[]string{string(peerId)},
 		"port": []string{strconv.FormatInt(6881, 10)},
 		"uploaded": []string{"0"},
