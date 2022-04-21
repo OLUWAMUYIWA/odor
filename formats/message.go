@@ -155,7 +155,3 @@ func buildConnReq() (io.Reader, error) {
 	io.ReadFull(&b, random[:])
 	return &b, nil
 }
-
-func parseConnResp(r io.Reader) {
-
-}

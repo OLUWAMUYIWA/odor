@@ -103,23 +103,24 @@ func BencList() parsec.Parsec {
 		res = parsec.Alt(manyInt, manyStr, benDict)(res.Rem)
 		if _, didErr := res.Errored(); !didErr {
 			return res
-		} else { //might be a list of lists
-			l := []any{}
-			listsRes := parsec.PResult{l, in, nil}
-
-			for {
-				res = BencList()(in)
-				if err, didErr := res.Errored(); didErr {
-					return parsec.PResult{
-						nil,
-						in,
-						err.(*parsec.ParsecErr),
-					}
-				}
-				l = append(l, res.Result)
-				listsRes.Rem = res.Rem
-			}
 		}
+		//might be a list of lists
+		l := []any{}
+		listsRes := parsec.PResult{l, in, nil}
+
+		for {
+			res = BencList()(res.Rem)
+			if err, didErr := res.Errored(); didErr {
+				return parsec.PResult{
+					nil,
+					in,
+					err.(*parsec.ParsecErr),
+				}
+			}
+			l = append(l, res.Result)
+			listsRes.Rem = res.Rem
+		}
+		
 
 		//return parsec.PResult{nil, in, err.(*parsec.ParsecErr)}
 		return res
