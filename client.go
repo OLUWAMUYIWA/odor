@@ -4,15 +4,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
 	"net"
+	"os"
 	"time"
 
 	"github.com/OLUWAMUYIWA/odor/formats"
 )
-
+var TimeoutError = errors.New("Udp request Timed out!")
 const PORT = 6881
 
 type Client struct {
@@ -22,10 +24,10 @@ type Client struct {
 	conn *net.UDPConn
 }
 
-const udpTimeout = time.Second * 5
-
+const RetryFactor = 15 // 1.e. try every  15 * 2 ^ n seconds
 
 // https://github.com/naim94a/udpt/wiki/The-BitTorrent-UDP-tracker-protocol
+// https://www.bittorrent.org/beps/bep_0015.html
 
 func (client *Client) Connect(ctx context.Context) (uint64, error) {
 	rand.Seed(time.Now().Unix())
@@ -52,32 +54,53 @@ func (client *Client) Connect(ctx context.Context) (uint64, error) {
 
 	buff := make([]byte, 16)
 	done := make(chan error, 1)
+	n := 1
+	req := func() {
+		go func() {
+			duration := time.Second * 15 * time.Duration(2 ^ n)
+			n += 1
+			err = c.SetDeadline(time.Now().Add(duration))
+			if err != nil {
+				done <- err 
+				return
+			}
+			defer c.SetDeadline(time.Time{}) // disable deadline by setting it to zero, else the deadline will apply to all I/O on this connection
 
-	go func() {
-		_, err = io.Copy(c, b)
-		if err != nil {
-			done <- err
-			return
+			_, err = io.Copy(c, b)
+			if err != nil {
+				done <- err
+				return
+			}
+			if err != nil {
+				done <- err
+				return
+			}
+			_, _, err = c.ReadFromUDP(buff)
+			if err != nil {
+				done <- err
+				return
+			}
+			done <- nil
+		}()
+
+		select {
+		case <- ctx.Done():
+			err = ctx.Err()
+		case err = <-done:
+			{
+				if errors.Is(err, os.ErrDeadlineExceeded) {
+					// do something is deadline exceded
+				}
+			}
 		}
+	}
+	req() // try it the first time
 
-		err = c.SetReadDeadline(time.Now().Add(udpTimeout))
-		if err != nil {
-			done <- err
-			return
+	for err != nil { // if it doesn't succeed, keep trying again
+		req()
+		if n > 8 { // break out after 8 trials
+			return 0, TimeoutError
 		}
-
-		_, _, err = c.ReadFromUDP(buff)
-		if err != nil {
-			done <- err
-			return
-		}
-		done <- nil
-	}()
-
-	select {
-	case <- ctx.Done():
-		err = ctx.Err()
-	case err = <-done:
 	}
 
 	respAction := binary.BigEndian.Uint32(buff[:4])
@@ -127,36 +150,52 @@ func (client *Client) Announce(ctx context.Context,  connId uint64, size uint64)
 	b.Write(buf[:2])
 
 	c := client.conn
-
 	resp := make([]byte, 1024)	
 	done := make(chan error, 1)
 	var a *AnnounceResp
-	go func () {
-		_, err = io.Copy(c, &b)
-		if err != nil {
-			done <- err
-			return
-		}
+	n := 1
+	req := func () {
+		go func () {
+			duration := time.Second * 15 * time.Duration(2 ^ n)
+			n += 1
+			err = c.SetDeadline(time.Now().Add(duration))
+			if err != nil {
+				done <- err 
+				return
+			}
+			defer c.SetDeadline(time.Time{}) // disable deadline by setting it to zero, else the deadline will apply to all I/O on this connection
 
-		err = c.SetReadDeadline(time.Now().Add(udpTimeout))
-		if err != nil {
-			done <- err
-			return
-		}
-		
-		_, _, err = c.ReadFromUDP(resp)
-		if err != nil {
-			done <- err
-			return
-		}
-	}()
+			_, err = io.Copy(c, &b)
+			if err != nil {
+				done <- err
+				return
+			}
 
-	select{
-	case <- ctx.Done():
-		err = ctx.Err()
-	case err = <-done :
+			if err != nil {
+				done <- err
+				return
+			}
+			
+			_, _, err = c.ReadFromUDP(resp)
+			if err != nil {
+				done <- err
+				return
+			}
+		}()
+
+		select{
+		case <- ctx.Done():
+			err = ctx.Err()
+		case err = <-done :
+		}
 	}
-
+	req()
+	 for err != nil {
+	 	req()
+	 	if n > 8 {
+	 		return nil, TimeoutError
+	 	}
+	 }
 
 	a, err = ParseAnnounceResp(resp)
 	if err != nil {
@@ -171,6 +210,10 @@ type AnnounceResp struct {
 	interval uint32
 	leechers uint32
 	seeders uint32
+	socks []Sock
+}
+
+type Sock struct {
 	ipv4 net.IP
 	port uint16
 }
@@ -178,5 +221,29 @@ type AnnounceResp struct {
 
 // comeback
 func ParseAnnounceResp(b []byte) (*AnnounceResp, error) {
-	return nil, nil
+	a := &AnnounceResp{}
+	if len(b) < 2 { // actually unnecessary
+		return nil, fmt.Errorf("Error parsing announce response: incomplete")
+	}
+	action := binary.BigEndian.Uint32(b[:4])
+	if action != 1 {
+		return nil, fmt.Errorf("Error parsing announce request: Action Should be %d, but is %d ", 1, action)
+	}
+	a.txId = binary.BigEndian.Uint32(b[4:8])
+	a.interval = binary.BigEndian.Uint32(b[8:12])
+	a.leechers = binary.BigEndian.Uint32(b[12:16])
+	socks := []Sock{}
+	b = b[16:]
+	l := len(b)
+	if l % 6 != 0 {
+		return nil, fmt.Errorf("Error parsing announce request: remainder should be divisible by 6 to be parseable")
+	}
+	
+	for i := 0; i < l-6; i += 6 {
+		s := b[i:i+6]
+		ip := net.IP(s[:4])
+		port := binary.BigEndian.Uint16(s[4:])
+		socks= append(socks, Sock{ip, port})
+	}
+	return a, nil
 }
