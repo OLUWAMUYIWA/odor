@@ -210,10 +210,10 @@ type AnnounceResp struct {
 	interval uint32
 	leechers uint32
 	seeders uint32
-	socks []Sock
+	socks []Peer
 }
 
-type Sock struct {
+type Peer struct {
 	ipv4 net.IP
 	port uint16
 }
@@ -232,7 +232,7 @@ func ParseAnnounceResp(b []byte) (*AnnounceResp, error) {
 	a.txId = binary.BigEndian.Uint32(b[4:8])
 	a.interval = binary.BigEndian.Uint32(b[8:12])
 	a.leechers = binary.BigEndian.Uint32(b[12:16])
-	socks := []Sock{}
+	socks := []Peer{}
 	b = b[16:]
 	l := len(b)
 	if l % 6 != 0 {
@@ -243,7 +243,7 @@ func ParseAnnounceResp(b []byte) (*AnnounceResp, error) {
 		s := b[i:i+6]
 		ip := net.IP(s[:4])
 		port := binary.BigEndian.Uint16(s[4:])
-		socks= append(socks, Sock{ip, port})
+		socks= append(socks, Peer{ip, port})
 	}
 	return a, nil
 }

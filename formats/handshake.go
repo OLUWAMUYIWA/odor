@@ -22,12 +22,13 @@ type Sha1 [20]byte
 
 type HandShake struct {
 	infoHash Sha1
-	peerId   Sha1
+	peerId   [20]byte
 }
 
 const pstr = "BitTorrent protocol"
+const Null byte = 0
 
-func NewHandShake(infoHash, peerId Sha1) *HandShake {
+func NewHandShake(infoHash, peerId [20]byte) *HandShake {
 	h := &HandShake{}
 	h.infoHash = infoHash
 	h.peerId = peerId
@@ -38,9 +39,14 @@ func NewHandShake(infoHash, peerId Sha1) *HandShake {
 // Marshall marshalls an handshake object into a reader that can be read from
 func (h *HandShake) Marshall() io.Reader {
 	b := &bytes.Buffer{}
+	b.Grow(49) // the spec says It is (49+len(pstr)) bytes long. 
+	// write pstr len
 	b.WriteByte(byte(len(PROTOCOL)))
+	// write pstr
 	b.WriteString(PROTOCOL)
-	b.Write(make([]byte, 8))
+	// write 8 mnull bytes. reserved
+	b.Write( bytes.Repeat([]byte{Null}, 8))
+
 	b.Write(h.infoHash[:])
 	b.Write(h.peerId[:])
 	return b

@@ -3,9 +3,8 @@ package formats
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"io"
-	"math/rand"
-
 )
 
 type MsgId uint8
@@ -21,6 +20,8 @@ const (
 	Piece
 	Cancel
 	Port
+	// hack: i made keep_alive id 10
+	KepAlive
 )
 
 type Message struct {
@@ -32,9 +33,33 @@ type HaveIndex uint32
 
 type Bitfield []byte
 
-type MessageCont interface {
-	HaveIndex | Bitfield | Payload
+func (b Bitfield) Set(i int) error {
+	if i < 0 {
+		return fmt.Errorf("Out of bounds")
+	}
+	pos := i / 8 // byte position
+	off := i % 8 // offset in byte position
+	if pos < 0 || pos >= len(b) {
+		return fmt.Errorf("Out of bounds")
+	}
+	b[pos] = b[pos] | (1 << uint(7 - off))
+	return nil
 }
+
+func (b Bitfield) Has(i int) bool {
+	if i < 0 {
+		return false
+	}
+	pos := i / 8
+	off := i % 8
+	if pos >= len(b) {
+		return false
+	}
+	return b[pos]>>uint(7-off)&1 != 0
+}
+
+
+
 
 type Payload struct {
 	index, begin, length uint32
@@ -108,6 +133,9 @@ func NewMessage(id MsgId, payload any) *Message {
 		{
 
 		}
+	case KepAlive: {
+
+	}
 	}
 	return m
 }
@@ -125,8 +153,12 @@ func ParseMessage(r io.Reader) (*MsgId, []byte, error) {
 	}
 	l := binary.BigEndian.Uint32(lBuf)
 
-	//comeback check for keep-alive message
 
+	if l == 0 {
+		// comeback: hac: i made id for keep-alive to be 10
+		var id MsgId = 10
+		return &id, nil, nil
+	}
 	msg := make([]byte, l)
 	if _, err := io.ReadFull(r, msg); err != nil {
 		return nil, nil, err
@@ -139,19 +171,19 @@ func ParseMessage(r io.Reader) (*MsgId, []byte, error) {
 	return idRef, payload, nil
 }
 
-const connectionID uint64 = 0x41727101980
+// const connectionID uint64 = 0x41727101980
 
-func buildConnReq() (io.Reader, error) {
-	var b bytes.Buffer
-	connIdBytes := []byte{}
-	binary.BigEndian.PutUint64(connIdBytes, connectionID)
-	n, err := b.Write(connIdBytes)
-	if err != nil || n != 8 {
-		return nil, err
-	}
-	b.Write([]byte{0, 0, 0, 0})
-	var random [4]byte
-	_, _ = rand.Read(random[:])
-	io.ReadFull(&b, random[:])
-	return &b, nil
-}
+// func buildConnReq() (io.Reader, error) {
+// 	var b bytes.Buffer
+// 	connIdBytes := []byte{}
+// 	binary.BigEndian.PutUint64(connIdBytes, connectionID)
+// 	n, err := b.Write(connIdBytes)
+// 	if err != nil || n != 8 {
+// 		return nil, err
+// 	}
+// 	b.Write([]byte{0, 0, 0, 0})
+// 	var random [4]byte
+// 	_, _ = rand.Read(random[:])
+// 	io.ReadFull(&b, random[:])
+// 	return &b, nil
+// }
