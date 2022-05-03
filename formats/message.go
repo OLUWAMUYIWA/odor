@@ -9,6 +9,8 @@ import (
 
 type MsgId uint8
 
+type Sha1 [20]byte
+
 const (
 	Choke MsgId = iota
 	Unchoke

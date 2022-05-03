@@ -17,7 +17,7 @@ import (
 var TimeoutError = errors.New("Udp request Timed out!")
 const PORT = 6881
 
-type Client struct {
+type UDPTClient struct {
 	infoHash formats.Sha1
 	peerId   formats.Sha1
 	announce string
@@ -29,7 +29,7 @@ const RetryFactor = 15 // 1.e. try every  15 * 2 ^ n seconds
 // https://github.com/naim94a/udpt/wiki/The-BitTorrent-UDP-tracker-protocol
 // https://www.bittorrent.org/beps/bep_0015.html
 
-func (client *Client) Connect(ctx context.Context) (uint64, error) {
+func (client *UDPTClient) Connect(ctx context.Context) (uint64, error) {
 	rand.Seed(time.Now().Unix())
 	txId := rand.Int31()
 
@@ -117,7 +117,7 @@ func (client *Client) Connect(ctx context.Context) (uint64, error) {
 }
 
 
-func (client *Client) Announce(ctx context.Context,  connId uint64, size uint64) (*AnnounceResp, error) {
+func (client *UDPTClient) Announce(ctx context.Context,  connId uint64, size uint64) (*AnnounceResp, error) {
 	var b bytes.Buffer
 	buf := make([]byte, 8)  //reusable buffer
 	binary.BigEndian.PutUint64(buf, connId)
@@ -210,10 +210,10 @@ type AnnounceResp struct {
 	interval uint32
 	leechers uint32
 	seeders uint32
-	socks []Peer
+	socks []PeerAddr
 }
 
-type Peer struct {
+type PeerAddr struct {
 	ipv4 net.IP
 	port uint16
 }
@@ -232,7 +232,7 @@ func ParseAnnounceResp(b []byte) (*AnnounceResp, error) {
 	a.txId = binary.BigEndian.Uint32(b[4:8])
 	a.interval = binary.BigEndian.Uint32(b[8:12])
 	a.leechers = binary.BigEndian.Uint32(b[12:16])
-	socks := []Peer{}
+	socks := []PeerAddr{}
 	b = b[16:]
 	l := len(b)
 	if l % 6 != 0 {
@@ -243,7 +243,7 @@ func ParseAnnounceResp(b []byte) (*AnnounceResp, error) {
 		s := b[i:i+6]
 		ip := net.IP(s[:4])
 		port := binary.BigEndian.Uint16(s[4:])
-		socks= append(socks, Peer{ip, port})
+		socks= append(socks, PeerAddr{ip, port})
 	}
 	return a, nil
 }

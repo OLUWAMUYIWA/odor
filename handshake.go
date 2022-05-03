@@ -1,4 +1,4 @@
-package formats
+package main
 
 import (
 	"bytes"
@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"io"
 	"net"
+
+	"github.com/OLUWAMUYIWA/odor/formats"
 )
 
 const PROTOCOL = "BitTorrent protocol"
-
-type Sha1 [20]byte
 
 // handshake: <pstrlen><pstr><reserved><info_hash><peer_id>
 
@@ -21,7 +21,7 @@ type Sha1 [20]byte
 // peer_id: 20-byte string used as a unique ID for the client.
 
 type HandShake struct {
-	infoHash Sha1
+	infoHash formats.Sha1
 	peerId   [20]byte
 }
 
@@ -78,20 +78,3 @@ func ParseHandShake(r io.Reader) (*HandShake, error) {
 }
 
 
-func (h *HandShake) Shake(conn net.Conn, infoHash Sha1) (*HandShake, error) {
-	if _, err := io.Copy(conn, h.Marshall()); err != nil {
-		return nil, err
-	}
-
-	hRes, err := ParseHandShake(conn)
-	if err != nil {
-		return nil, err
-	} 
-
-	if bytes.Compare(infoHash[:], hRes.infoHash[:]) != 0 {
-		// comeback
-		return nil, fmt.Errorf("nvalid infoHash otten. expected: % x. Got % x", infoHash, hRes.infoHash)
-	}
-
-	return hRes, nil
-}

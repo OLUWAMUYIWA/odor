@@ -86,7 +86,7 @@ func Tag(r rune) Parsec {
 		}
 
 		return PResult{
-			nil, in, &ParsecErr{context: "Parser Unmatched"},
+			nil, in, UnmatchedErr(),
 		}
 	}
 }
@@ -665,7 +665,9 @@ func Str(str string) Parsec {
 }
 
 
-// Many0 will take many as many reps of a parser, even zero. At the first failure of the parser, it returns witout erroring
+
+// Many0 will drive as many reps of a parser as possible, incl. zero. At the first failure of the parser, it returns without erroring
+// result is a slice of results of the parser being repeated
 func (p Parsec) Many0() Parsec {
 	return func(in ParserInput) PResult {
 		resSlice := make([]any, 0)
@@ -685,6 +687,8 @@ func (p Parsec) Many0() Parsec {
 }
 
 // Many1 is like `Many0`, but must pass at least once
+// result is a slice of results of the parser being repeated
+
 func (p Parsec) Many1() Parsec {
 	return func(in ParserInput) PResult {
 		resSlice := make([]any, 0)
@@ -752,6 +756,68 @@ func (p Parsec) Then(sec Parsec) Parsec {
 	}
 }
 
+// ThenDiscard is like Then, but discards the result of the second parser if it matches.
+func (p Parsec) ThenDiscard(sec Parsec) Parsec {
+	return func(in ParserInput) PResult {
+		res := p(in)
+		if res.Rem.Empty() {
+			return PResult{
+				nil,
+				in,
+				IncompleteErr(),
+			}
+		}
+		if res.Err != nil { //first parser failed or there's no input left
+			return PResult{nil, in, UnmatchedErr()}
+		}
+		res2 := sec(res.Rem)
+		if res2.Err != nil { //first parser failed or there's no input left
+			return PResult{nil, in, UnmatchedErr()}
+		}
+		return res
+	}
+}
+
+// AndThen joins n parsers. 
+// If the first one suceeds, it calls the next one. If it doesn't it returns an error
+// result is a list of the results of each parser
+func (p Parsec) AndThen(secs []Parsec) Parsec {
+	return func(in ParserInput) PResult {
+		rem := in
+		slice := make([]any, 0) // has to be a slice of any type, because we do not know the types of the results of the parsers inputed 
+		result := PResult{slice, rem, nil}
+		out := p(rem)
+		if out.Rem.Empty() {
+			return PResult{
+				nil,
+				in,
+				IncompleteErr(),
+			}
+		}
+		if out.Err != nil { //first parser failed or there's no input left
+			return PResult{nil, in, UnmatchedErr()}
+		}
+		slice = append(slice, out.Result)
+		// result.Result.(*list.List).PushBack(out.Result)
+		for _, sec := range secs {
+			if out.Rem.Empty() {
+				return PResult{
+					nil,
+					in,
+					IncompleteErr(),
+				}
+			}
+			out = sec(out.Rem)
+			if _, didErr := out.Errored(); didErr {
+				return PResult{list.New(), in, UnmatchedErr()}
+			}
+			// result.Result.(*list.List).PushBack(out.Result)
+			slice = append(slice, out.Result)
+
+		}
+		return result
+	}
+}
 // Alt tries a list of parsers and returns the result of the first successful one
 func Alt(ps ...Parsec) Parsec {
 	return func(in ParserInput) PResult {
@@ -778,27 +844,6 @@ func Alt(ps ...Parsec) Parsec {
 	}
 }
 
-// ThenDiscard is like Then, but discards the result of the second parser if it matches.
-func (p Parsec) ThenDiscard(sec Parsec) Parsec {
-	return func(in ParserInput) PResult {
-		res := p(in)
-		if res.Rem.Empty() {
-			return PResult{
-				nil,
-				in,
-				IncompleteErr(),
-			}
-		}
-		if res.Err != nil { //first parser failed or there's no input left
-			return PResult{nil, in, UnmatchedErr()}
-		}
-		res2 := sec(res.Rem)
-		if res2.Err != nil { //first parser failed or there's no input left
-			return PResult{nil, in, UnmatchedErr()}
-		}
-		return res
-	}
-}
 
 // Guarded uses `Tag` `TakeTillIncl` to take a list of runes that fill up the space between `left` and `right`
 //  result is a lst of runes
@@ -812,6 +857,10 @@ func Guarded(left, right rune) Parsec {
 	}
 }
 
+// GuardedWhile takes two runes as left and right guards, a predicate to specify the conditions each rune 
+// between the left and the right runes must satisfy
+//  the `left` and `right` runes are not parts of the results. they are discarded
+// since the internal mechanism of `GuardedWhile` uses `TakeWhile`, the result returned is a slice of runes
 func GuardedWhile(left, right rune, p Predicate) Parsec {
 	return func(in ParserInput) PResult {
 		pre := Tag(left)
@@ -851,42 +900,7 @@ func GuardedWhile(left, right rune, p Predicate) Parsec {
 }
 
 
-// And joins n parsers. 
-// If the first one suceeds, it calls the next one. If it doesn't it returns an error
-// result is a list of the results of each parser
-func (p Parsec) And(secs []Parsec) Parsec {
-	return func(in ParserInput) PResult {
-		rem := in
-		result := PResult{list.New(), rem, nil}
-		out := p(rem)
-		if out.Rem.Empty() {
-			return PResult{
-				nil,
-				in,
-				IncompleteErr(),
-			}
-		}
-		if out.Err != nil { //first parser failed or there's no input left
-			return PResult{nil, in, UnmatchedErr()}
-		}
-		result.Result.(*list.List).PushBack(out.Result)
-		for _, sec := range secs {
-			if out.Rem.Empty() {
-				return PResult{
-					nil,
-					in,
-					IncompleteErr(),
-				}
-			}
-			out = sec(out.Rem)
-			if _, didErr := out.Errored(); didErr {
-				return PResult{list.New(), in, UnmatchedErr()}
-			}
-			result.Result.(*list.List).PushBack(out.Result)
-		}
-		return result
-	}
-}
+
 
 type Callback func(any, Parsec) PResult
 

@@ -49,7 +49,7 @@ func BencStr() parsec.Parsec{
 		if in.Empty() {
 			return parsec.PResult{
 				Result: nil,
-				Rem: in,
+				Rem: rem,
 				Err: parsec.IncompleteErr(),
 			}
 		}
@@ -63,8 +63,18 @@ func BencStr() parsec.Parsec{
 		if err, didErr := resColon.Errored(); didErr {
 			return parsec.PResult{Result: nil, Rem: in, Err: err.(*(parsec.ParsecErr)) }
 		} 
+		num := numRes.Result.(int)
 		rem = resColon.Rem
-		res := parsec.StrN(numRes.Result.(int))(rem)
+		if num == 0 { // the case of the empty string: `0:`
+			return parsec.PResult{
+				Result: "",
+				Rem: rem,
+				Err: nil,
+			}
+		}
+
+		// non-empty string
+		res := parsec.StrN(num)(rem)
 		if err, didErr := res.Errored(); didErr {
 			return parsec.PResult{Result: nil, Rem: in, Err: err.(*(parsec.ParsecErr)) }
 		} 
@@ -82,17 +92,19 @@ func BencInt() parsec.Parsec {
 		res := guardedInt(in)
 		// the internal TaeWhile used to implement GuardedWhile returns a slice of runes as result
 		digits := res.Result.([]rune)
-		digitsStr := string(digits)
-		num, _ := strconv.Atoi(digitsStr)
+		num, _ := strconv.ParseInt(string(digits), 10, 0)
 		res.Result = num
 		return res
 	}
 }
 
+
+// BencList
+// possible return types: slice of strings, slice of ints, slice of maps, slice of slices of any of th above
 func BencList() parsec.Parsec {
 	pre := parsec.Tag('l')
 	last := parsec.Tag('e')
-	manyStr := BencStr().Many0().ThenDiscard(last) //comeback the case of empty string
+	manyStr := BencStr().Many0().ThenDiscard(last)
 	manyInt := BencInt().Many0().ThenDiscard(last)
 	benDict := BenDict().Many0().ThenDiscard(last)
 	return func(in parsec.ParserInput) parsec.PResult {
@@ -100,16 +112,21 @@ func BencList() parsec.Parsec {
 		if err, didErr := res.Errored(); didErr {
 			return parsec.PResult{nil, in, err.(*parsec.ParsecErr)}
 		}
-		res = parsec.Alt(manyInt, manyStr, benDict)(res.Rem)
+		rem := res.Rem
+
+		// fast path: an alternative between a list of integers, strings, or dictionaries
+		// `Alt` is not particularly wasteful because the kind of encoding we're dealing with quickly exits if the type were trying is wrong
+		res = parsec.Alt(manyInt, manyStr, benDict)(rem)
 		if _, didErr := res.Errored(); !didErr {
-			return res
+			return res // return the result as is, its perfect
 		}
+
 		//might be a list of lists
 		l := []any{}
 		listsRes := parsec.PResult{l, in, nil}
 
 		for {
-			res = BencList()(res.Rem)
+			res = BencList()(rem) // use the same input as what was returned in the pre stage
 			if err, didErr := res.Errored(); didErr {
 				return parsec.PResult{
 					nil,
@@ -117,20 +134,33 @@ func BencList() parsec.Parsec {
 					err.(*parsec.ParsecErr),
 				}
 			}
-			l = append(l, res.Result)
+			l = append(l, res.Result) // would be a slice of any of the possible types a list can contain
+			rem = res.Rem
 			listsRes.Rem = res.Rem
+
+			// now check whether to exit the loop or not
+			end := last(rem)
+			if err, didErr := end.Errored(); didErr && errors.Is(err, parsec.UnmatchedErr()) { 
+				// UnmatchedErr means the rune does not match, meaning that we're not done yet, but theres more data to go
+				continue
+			} else if errors.Is(err, parsec.IncompleteErr()){ // there's no more data to eat, therefore, the list is open-ended: incomplete
+				return parsec.PResult{
+					nil,
+					in,
+					parsec.IncompleteErr(),
+				}
+			} else { // we have reached the end: the rune `e`, which ends the list matches
+				return listsRes
+			}
 		}
 		
-
-		//return parsec.PResult{nil, in, err.(*parsec.ParsecErr)}
-		return res
 	}
 
 }
 
 func BenDict() parsec.Parsec {
-	pre := parsec.Tag('d')
-	last := parsec.Tag('e')
+	prefix := parsec.Tag('d')
+	suffix := parsec.Tag('e')
 	key := BencStr()
 	str := BencStr()
 	num := BencInt()
@@ -138,28 +168,70 @@ func BenDict() parsec.Parsec {
 	nonDicts := parsec.Alt(num, str, list)
 	return func(in parsec.ParserInput) parsec.PResult {
 		dict := map[string]any{}
-		res := pre(in)
+
+		// first check the prefix for dictionaries
+		res := prefix(in)
 		if err, didErr := res.Errored(); didErr {
 			return parsec.PResult{nil, in, err.(*parsec.ParsecErr)}
 		}
-
+		rem := res.Rem
+		mapRes := parsec.PResult{
+			Result: dict,
+			Rem: in,
+			Err: nil,
+		}
 		for {
-			keyRes := key(in)
-			if _, didErr := keyRes.Errored(); didErr { // i.e. none of these parsers passed
+			keyRes := key(rem)
+			if _, didErr := keyRes.Errored(); didErr { // comeback: coulld be the end of the dict
 				break
 			}
+			rem = keyRes.Rem
 			k := keyRes.Result.(string)
-			v := nonDicts(in)
-			if _, didErr := v.Errored(); didErr { // i.e. none of these parsers passed
-				// we then try to parse it as a dictionary
-				v = BenDict()(keyRes.Rem)
+			v := nonDicts(rem)
+			rem = v.Rem
+			if err, didErr := v.Errored(); didErr { // i.e. none of these `nonDicts` parsers passed
+				if errors.Is(err, parsec.UnmatchedErr()) { // what we have here should be a dict inside a dict
+					res = BenDict()(rem)
+					if err, didErr := res.Errored(); didErr { // ow, we have no other type to match, we have erred
+						return parsec.PResult{
+							Result: nil,
+							Rem: in,
+							Err: err.(*parsec.ParsecErr),
+						}
+					} else { // in this case, we were right. it is a dictionary
+						dict[k] = res.Result
+					}
+				} else if errors.Is(err, parsec.IncompleteErr()) { // we have an error here. a key without a value
+					return parsec.PResult{
+						Result: nil,
+						Rem: in,
+						Err: parsec.IncompleteErr(),
+					}
+				} // there's no `else` because we have only two kinds of errors
 
-				if _, didErr := v.Errored(); didErr{
-					break
-				}
+			} else { // the value matches with the `nonDicts` parser. i.e. a fast path
+				// add the value to the cache
+				dict[k] = v
 			}
-			dict[k] = v
+
+			// in any case, we then check if we're done
+			end := suffix(rem)
+			if err, didErr := end.Errored(); didErr && errors.Is(err, parsec.UnmatchedErr()){ // not yet done
+				continue
+			} else if errors.Is(err, parsec.IncompleteErr()){
+				return parsec.PResult{ // certainly has to be an error. the dictionary is open-ended, not terminated by a `e`
+					Result: nil,
+					Rem: in,
+					Err: parsec.IncompleteErr(),
+				}
+			} else { // it matches the end
+				mapRes.Rem = end.Rem // the remainder becomes the remainder after the terminator has been taken
+				mapRes.Result = dict // just to be double-sure. comeback: may not be necessary
+				break // we break ou of the loop
+			}
 		}
+
+		return mapRes
 		
 	}
 }
