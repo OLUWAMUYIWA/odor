@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 
 	"github.com/OLUWAMUYIWA/odor/formats"
 )

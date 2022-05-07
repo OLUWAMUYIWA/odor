@@ -63,5 +63,5 @@ func (m *MetaInfo) GetInfoHash() (*Sha1, error) {
 }
 
 func (m MetaInfo) Size() int {
-	
+	return 0
 }

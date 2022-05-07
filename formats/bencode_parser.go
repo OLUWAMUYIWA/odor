@@ -16,6 +16,12 @@ type BencInput struct {
 	r *bufio.Reader
 }
 
+
+func NewBencInput(r io.Reader) *BencInput {
+	return &BencInput{
+		r: bufio.NewReader(r),
+	}
+}
 // basically a peek but returned. the input must not be changed after a Car
 func (b *BencInput) Car() rune {
 	r,_,_ := b.r.ReadRune()
@@ -123,7 +129,10 @@ func BencList() parsec.Parsec {
 
 		//might be a list of lists
 		l := []any{}
-		listsRes := parsec.PResult{l, in, nil}
+		listsRes := parsec.PResult{
+			l, 
+			in, 
+			nil}
 
 		for {
 			res = BencList()(rem) // use the same input as what was returned in the pre stage
@@ -278,7 +287,7 @@ func (d *Decoder) Decode(structure any) error {
 		tagValue := field.Tag.Get("benc")
 
 		if tagValue == "" {
-                        continue
+            continue
         }
         kind := field.Type.Kind()
 

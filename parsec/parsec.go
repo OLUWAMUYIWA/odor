@@ -285,6 +285,7 @@ func StrN(n int) Parsec {
 			currnum, _ := res.WriteRune(curr)
 			num += currnum
 			if num >= n { // we have reached the specific length on bytes we need
+				// comeback: what if num exceeds n?
 				return PResult{
 					res.String(),
 					rem,
@@ -564,15 +565,16 @@ func Number() Parsec {
 		digs := OneOf(numbers)
 		rem := in
 		var e *ParsecErr
-		first, neg := 0, false
+		pref, neg := false, false
 		for !rem.Empty() {
 			//first check if the first rune is a '-', then itll be negative
-			if first == 0 {
+			if !pref  {
 				res := Tag('-')(rem)
 				if res.Err != nil {
 					neg = true
 				}
-				first++
+				rem = res.Rem
+				pref = true
 
 			} else {
 				res := digs(rem)
@@ -882,8 +884,8 @@ func GuardedWhile(left, right rune, p Predicate) Parsec {
 		}
 		result := res.Result
 		post := Tag(right)
-		res = post(res.Rem)
-		if err, didErr := res.Errored(); didErr {
+		res2 := post(res.Rem)
+		if err, didErr := res2.Errored(); didErr {
 			return PResult{
 				Result: nil,
 				Rem: in,

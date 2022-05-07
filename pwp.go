@@ -54,7 +54,7 @@ func (c *Client) Shake(h *HandShake, infoHash formats.Sha1) (*HandShake, error) 
 
 // The bitfield message may only be sent immediately after the handshaking sequence is completed, and before any other messages are sent. 
 // It is optional, and need not be sent if a client has no pieces. 
-func (c *Client) GetBitField() (formats.Bitfield, error) {
+// func (c *Client) GetBitField() (formats.Bitfield, error) {
 
-}
+// }
 

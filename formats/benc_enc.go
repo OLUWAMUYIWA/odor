@@ -1,13 +1,10 @@
 package formats
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"reflect"
 	"strconv"
-
-	"golang.org/x/text/cases"
 )
 
 
@@ -16,7 +13,6 @@ type BencEncoder struct {
 }
 
 func NewBencoder(wtr io.Writer) *BencEncoder {
-	json.NewEncoder(wtr)
 	return &BencEncoder{
 		wtr: wtr,
 	}
@@ -37,21 +33,19 @@ func (b *BencEncoder) Encode(v any) error {
 func marshall(v reflect.Value, w io.Writer) error {
 	switch v.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64: {
-		io.WriteString(w, "i")
-		i := v.Int()
-		io.WriteString(w, strconv.FormatInt(i, 10))
-		io.WriteString(w, "e")
+		fmt.Fprintf(w, "i%de", v.Int())
 	}
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64: {
-		io.WriteString(w, "i")
-		i := v.Uint()
-		io.WriteString(w, strconv.FormatUint(i, 10))
-		io.WriteString(w, "e")
+		fmt.Fprintf(w, "i%de", v.Uint())
 	} 
 	case reflect.String: {
 		s := v.String()
 		io.WriteString(w, (strconv.FormatInt(int64(len(s)), 10)))
-		io.WriteString(w, fmt.Sprintf(":%s", s))
+		if s != "" {
+			io.WriteString(w, fmt.Sprintf(":%s", s))
+		} else {
+			io.WriteString(w, ":")
+		}
 	} 
 	case reflect.Slice: {
 		io.WriteString(w, "l")
@@ -79,27 +73,25 @@ func marshall(v reflect.Value, w io.Writer) error {
 			if err := marshall(value, w); err != nil {
 					return err
 			}
-			// switch t := value.Interface().(type) {
-			// case int, string, []int, []string: {
-			// 	if err := marshall(value, w); err != nil {
-			// 		return err
-			// 	}
-			// } 
-			}
 		}
 		io.WriteString(w, "e")
 	}
-	case reflect.Struct: {
+	case reflect.Struct: { // bencode does not recognize structs, we only range through the fields
 		num := v.NumField()
 		for i := 0; i < num; i++ {
 			f := v.Field(i)
-			switch f.Kind(): { // only our supported types are allowed here
+			switch f.Kind() { // only our supported types are allowed here
 			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.String, reflect.Slice, reflect.Map: {
 				if err := marshall(f, w); err != nil {
 					return err
 				}
 			}
-			case default: {
+			case reflect.Struct: {
+				if err := marshall(f, w); err != nil {
+					return err
+				}
+			}
+			default: {
 				return fmt.Errorf("Unsupported type!")				
 			}
 			}
