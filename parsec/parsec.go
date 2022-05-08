@@ -37,7 +37,7 @@ type ParserInput interface {
 type PResult struct {
 	Result interface{}
 	Rem    ParserInput
-	Err    *ParsecErr
+	Err    error
 }
 
 func (r *PResult) Errored() (error, bool) {
@@ -69,7 +69,7 @@ var (
 	Unmatched  *ParsecErr = &ParsecErr{context: "Parser Unmatched"}
 	Incomplete *ParsecErr = &ParsecErr{context: "There isn't enough data left for this parser"}
 
-	PredicateFailed *ParsecErr = &ParsecErr{context: "The predicate failed without returning anything"}
+	// PredicateFailed *ParsecErr = &ParsecErr{context: "The predicate failed without returning anything"}
 )
 
 ////////SIMPLE PARSERS
@@ -107,7 +107,7 @@ func IsNot(r rune) Parsec {
 	}
 }
 
-// CharUTF* returns a parser which checks if this rune is a valid utf-8 character. thhis character could be any utf-8 symbol
+// CharUTF8 returns a parser which checks if this rune is a valid utf-8 character. thhis character could be any utf-8 symbol
 func CharUTF8() Parsec {
 	return func(in ParserInput) PResult {
 		if in.Empty() {
@@ -175,7 +175,7 @@ func Digit() Parsec {
 	}
 }
 
-// Letter takes only utf-8 encoded runes and ensures they are letters
+// Letter checks if the nexxt rune from the rune stream is a valid utf-8 letter
 func Letter() Parsec {
 	return func(in ParserInput) PResult {
 		if in.Empty() {
@@ -297,7 +297,9 @@ func StrN(n int) Parsec {
 }
 
 
-// TakeTill eats runes until a Predicate is satisfied. It must take at least one rune for it to be successful
+// TakeTill eats runes until a Predicate is satisfied. 
+//It must take at least one rune for it to be successful
+// returns a list of runes
 func TakeTill(f Predicate) Parsec {
 	return func(in ParserInput) PResult {
 
@@ -320,7 +322,7 @@ func TakeTill(f Predicate) Parsec {
 					return PResult{
 						nil,
 						in,
-						PredicateFailed,
+						UnmatchedErr(),
 					}
 				}
 
@@ -345,17 +347,18 @@ func TakeTill(f Predicate) Parsec {
 }
 
 // TakeTillIncl is same as TakeTill, but also eats up the byte that satisfies the predicate too
-// It doesn't include the last byte in the result, it ust consumes it
+// It doesn't include the last byte in the result, it just consumes it
+// It returns a list of runes too
 func TakeTillIncl(f Predicate) Parsec {
 	return func(in ParserInput) PResult {
 
 		takeTill := TakeTill(f)
 		res := takeTill(in)
-		if err, didErr := res.Errored(); didErr {
+		if err, didErr := res.Errored(); didErr { // the worker parser returned error
 			return PResult{
 				Result: nil,
 				Rem: in,
-				Err: err.(*ParsecErr),
+				Err: err,
 			}
 		}
 		// next Car() should be the rune that astisfies the f predicate
@@ -364,8 +367,9 @@ func TakeTillIncl(f Predicate) Parsec {
 	}
 }
 
-// TakeWhile keeps eating runes while Pedicate returns true. Returns a slice of runes.
+// TakeWhile keeps eating runes while Pedicate returns true.
 // If no rune makes it into the results, `TakeWhile` returns an error
+// Returns a slice of runes.
 func TakeWhile(f Predicate) Parsec {
 
 	return func(in ParserInput) PResult {
@@ -390,7 +394,7 @@ func TakeWhile(f Predicate) Parsec {
 			return PResult{
 				nil,
 				in,
-				PredicateFailed,
+				UnmatchedErr(),
 			}
 		}
 
@@ -404,7 +408,8 @@ func TakeWhile(f Predicate) Parsec {
 
 // Terminated asks if the first argument `match` is `followed` immediately by the second one `post`
 // Terminated takes `strings` and not runes. This makes it quite easier to use with string-based protocols
-// The Result is the first one, the `match`, because `Termnated` assumes that that is the one we're interested in.
+// The Result is the first one, the `match`, because `Termnated` assumes that that is the one we're interested in, and `post` is merely a delimeter.
+// It returns the original `match` string if it passes, or nil if it fails
 func Terminated(match, post string) Parsec {
 
 	return func(in ParserInput) PResult {
@@ -420,7 +425,7 @@ func Terminated(match, post string) Parsec {
 		rem := in
 		matchRunes, postRunes := []rune(match), []rune(post) //create rune slices from the strings
 
-		//we need two loops, ne for the first string, the second for the other.
+		//we need two loops, one for the first string, the second for the other.
 		//If we fail anywhere in running through the two loops, we fail out immediately
 
 		for _, r := range matchRunes {
@@ -820,6 +825,7 @@ func (p Parsec) AndThen(secs []Parsec) Parsec {
 		return result
 	}
 }
+
 // Alt tries a list of parsers and returns the result of the first successful one
 func Alt(ps ...Parsec) Parsec {
 	return func(in ParserInput) PResult {

@@ -12,6 +12,7 @@ import (
 	"github.com/OLUWAMUYIWA/odor/parsec"
 )
 
+
 type BencInput struct {
 	r *bufio.Reader
 }
