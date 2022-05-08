@@ -26,10 +26,19 @@ const (
 	KepAlive
 )
 
-type Message struct {
+// Msg: All of the remaining messages in the protocol take the form of <length prefix><message ID><payload>
+type Msg struct {
+	len int
+	id MsgId
+	payload []byte
+}
+
+type MsgDec struct {
 	id     uint8
 	buffer *bytes.Buffer
 }
+
+
 
 type HaveIndex uint32
 
@@ -68,109 +77,127 @@ type Payload struct {
 
 }
 
-func NewMessage(id MsgId, payload any) *Message {
-	m := &Message{
-		buffer: &bytes.Buffer{},
-	}
-	switch id {
-	case Choke | Unchoke | Interested | Uninterested:
+func (m *Msg) Marshall(w io.Writer) error {
+	switch m.id {
+	case Choke | Unchoke | Interested | Uninterested: // <len=0001><id=x>
 		{
-			m.id = uint8(Choke)
 			//length
-			l := uint32(1)
-			binary.Write(m.buffer, binary.BigEndian, &l)
-			id := uint8(id)
-			binary.Write(m.buffer, binary.BigEndian, &id)
-			return m
+			b := make([]byte, 5)
+			binary.BigEndian.PutUint32(b[:4], uint32(1))
+			b[4] = uint8(m.id)
+			_, err := w.Write(b)
+			return err
 		}
-	case Have:
+	case Have: // have: <len=0005><id=4><piece index>
 		{
-			m.id = uint8(Have)
-			l := uint32(5)
-			binary.Write(m.buffer, binary.BigEndian, &l)
-			id := uint8(Have)
-			binary.Write(m.buffer, binary.BigEndian, &id)
-			index, ok := payload.(uint32)
-			if !ok {
-				panic("should be called with a uint32")
+			b := make([]byte, 9)
+			binary.BigEndian.PutUint32(b[:4], uint32(5))
+			b[4] = uint8(m.id)
+			n := copy(b[4:], m.payload)
+			if n != 4 {
+				return fmt.Errorf("`Have`s payload should be four bytes long")
 			}
-			binary.Write(m.buffer, binary.BigEndian, &index)
-		}
-	case BitField:
-		{
-			p,ok := payload.(Payload)
-			if !ok {
-				panic("Expects a valid Payload object")
+			if _, err := w.Write(b); err != nil {
+				return err
 			}
-			//length
-			binary.Write(m.buffer, binary.BigEndian, &(p.length))
-			id := uint8(BitField)
-			binary.Write(m.buffer, binary.BigEndian, &id)
-			// comeback
 		}
-	case Request:
+	case BitField: // bitfield: <len=0001+X><id=5><bitfield>
 		{
-			l := uint32(13)
-			binary.Write(m.buffer, binary.BigEndian, &l)
-			id := uint8(Request)
-			binary.Write(m.buffer, binary.BigEndian, &id)
-			p,ok := payload.(Payload)
-			if !ok {
-				panic("Expects a valid Payload object ")
-			}
-			binary.Write(m.buffer, binary.BigEndian, &(p.index))
-			binary.Write(m.buffer, binary.BigEndian, &(p.begin))
-			binary.Write(m.buffer, binary.BigEndian, &(p.length))
+			l := len(m.payload) + 1
+			buf := make([]byte, l+4)
+			binary.BigEndian.PutUint32(buf[:4], uint32(l))
+			buf[4] = byte(m.id)
+			copy(buf[5:], m.payload)
+			_, err := w.Write(buf)
+			if err != nil {
+				return err
+			} 
+		}
+	case Request: // request: <len=0013><id=6><index><begin><length>
+		{
+			buf := make([]byte, 17)
+			binary.BigEndian.PutUint32(buf[:4], 13)
+			buf[4] = byte(m.id)
+			copy(buf[5:], m.payload)
+			_, err := w.Write(buf)
+			if err != nil {
+				return err
+			} 
+		}
+	case Piece: // piece: <len=0009+X><id=7><index><begin><block>
+		{
+			l := len(m.payload) + 1
+			buf := make([]byte, l + 4)
+			binary.BigEndian.PutUint32(buf[:4], uint32(l))
+			buf[4] = byte(m.id)
+			copy(buf[5:], m.payload)
+			_, err := w.Write(buf)
+			if err != nil {
+				return err
+			} 
 
 		}
-	case Piece:
+	case Cancel: // <len=0013><id=8><index><begin><length>
 		{
-
+			buf := make([]byte, 17)
+			binary.BigEndian.PutUint32(buf[:4], 13)
+			buf[4] = byte(m.id)
+			copy(buf[5:], m.payload)
+			_, err := w.Write(buf)
+			if err != nil {
+				return err
+			} 
 		}
-	case Cancel:
+	case Port: // <len=0003><id=9><listen-port>
 		{
-
-		}
-	case Port:
-		{
-
+			buf := make([]byte, 7)
+			binary.BigEndian.PutUint32(buf[:4], 3)
+			buf[4] = byte(m.id)
+			copy(buf[5:], m.payload)
+			_, err := w.Write(buf)
+			if err != nil {
+				return err
+			} 
 		}
 	case KepAlive: {
-
+		if _, err := w.Write(bytes.Repeat([]byte{0}, 4)); err != nil {
+			return err
+		}
 	}
 	}
-	return m
-}
-
-func (m *Message) Marshall(w io.Writer) error  {
-	_, err := io.Copy(w, m.buffer)
-	return err
+	return nil
 }
 
 
-func ParseMessage(r io.Reader) (*MsgId, []byte, error) {
+func ParseMessage(r io.Reader) (*Msg, error) {
+	m := &Msg{}
 	lBuf := make([]byte, 4)
 	if _, err := io.ReadFull(r, lBuf); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	l := binary.BigEndian.Uint32(lBuf)
+	l := int(binary.BigEndian.Uint32(lBuf))
 
 
 	if l == 0 {
-		// comeback: hac: i made id for keep-alive to be 10
-		var id MsgId = 10
-		return &id, nil, nil
+		// comeback: hack: i made id for keep-alive to be 10
+		return &Msg{len: l, id: KepAlive, payload: []byte{}}, nil
 	}
+
 	msg := make([]byte, l)
 	if _, err := io.ReadFull(r, msg); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	id, payload  := MsgId(msg[0]), msg[1:]
+	id  := MsgId(msg[0]) 
+	if l == 1 {
+		return &Msg{len: 1, id: id, payload: []byte{}}, nil
+	}
+	payload := msg[1:]
 
-	idRef := &id
-
-	return idRef, payload, nil
+	m.id = MsgId(id)
+	m.len = l
+	m.payload = payload
+	return m, nil
 }
 
 // const connectionID uint64 = 0x41727101980

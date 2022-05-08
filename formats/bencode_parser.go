@@ -111,13 +111,14 @@ func BencInt() parsec.Parsec {
 func BencList() parsec.Parsec {
 	pre := parsec.Tag('l')
 	last := parsec.Tag('e')
+	// since empty  lists exist, we use Many0
 	manyStr := BencStr().Many0().ThenDiscard(last)
 	manyInt := BencInt().Many0().ThenDiscard(last)
 	benDict := BenDict().Many0().ThenDiscard(last)
 	return func(in parsec.ParserInput) parsec.PResult {
 		res := pre(in)
 		if err, didErr := res.Errored(); didErr {
-			return parsec.PResult{nil, in, err.(*parsec.ParsecErr)}
+			return parsec.PResult{Result: nil,Rem:  in, Err:  err}
 		}
 		rem := res.Rem
 
@@ -129,22 +130,31 @@ func BencList() parsec.Parsec {
 		}
 
 		//might be a list of lists
-		l := []any{}
+		l := [][]any{}
 		listsRes := parsec.PResult{
-			l, 
-			in, 
-			nil}
+			Result: l, 
+			Rem: in, 
+			Err: nil,
+		}
 
 		for {
 			res = BencList()(rem) // use the same input as what was returned in the pre stage
 			if err, didErr := res.Errored(); didErr {
 				return parsec.PResult{
-					nil,
-					in,
-					err.(*parsec.ParsecErr),
+					Result: nil,
+					Rem: in,
+					Err: err,
 				}
 			}
-			l = append(l, res.Result) // would be a slice of any of the possible types a list can contain
+			currRes, ok := res.Result.([]any)
+			if !ok {
+				return parsec.PResult{
+					Result: nil,
+					Rem: in,
+					Err: parsec.UnmatchedErr(),
+				}
+			}
+			l = append(l, currRes) // would be a slice of any of the possible types a list can contain
 			rem = res.Rem
 			listsRes.Rem = res.Rem
 
@@ -155,9 +165,9 @@ func BencList() parsec.Parsec {
 				continue
 			} else if errors.Is(err, parsec.IncompleteErr()){ // there's no more data to eat, therefore, the list is open-ended: incomplete
 				return parsec.PResult{
-					nil,
-					in,
-					parsec.IncompleteErr(),
+					Result: nil,
+					Rem: in,
+					Err: parsec.IncompleteErr(),
 				}
 			} else { // we have reached the end: the rune `e`, which ends the list matches
 				return listsRes
@@ -182,7 +192,7 @@ func BenDict() parsec.Parsec {
 		// first check the prefix for dictionaries
 		res := prefix(in)
 		if err, didErr := res.Errored(); didErr {
-			return parsec.PResult{nil, in, err.(*parsec.ParsecErr)}
+			return parsec.PResult{Result: nil, Rem: in, Err: err}
 		}
 		rem := res.Rem
 		mapRes := parsec.PResult{
@@ -206,7 +216,7 @@ func BenDict() parsec.Parsec {
 						return parsec.PResult{
 							Result: nil,
 							Rem: in,
-							Err: err.(*parsec.ParsecErr),
+							Err: err,
 						}
 					} else { // in this case, we were right. it is a dictionary
 						dict[k] = res.Result

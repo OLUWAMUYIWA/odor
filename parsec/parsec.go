@@ -569,7 +569,7 @@ func Number() Parsec {
 		numbers := []rune{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'}
 		digs := OneOf(numbers)
 		rem := in
-		var e *ParsecErr
+		var e error
 		pref, neg := false, false
 		for !rem.Empty() {
 			//first check if the first rune is a '-', then itll be negative
@@ -682,9 +682,13 @@ func (p Parsec) Many0() Parsec {
 		for !res.Rem.Empty() {
 			out := p(res.Rem)
 			if out.Err != nil {
-				return res
+				// still retains the complete input, but returns a nil error even if te parser eats nnothing
+				return PResult{
+					Result: nil,
+					Rem: in,
+					Err: nil,
+				}
 			}
-			// res.Result.(*list.List).PushBack(out.Result) //coerce the `interface{}` Result value into a `*list.List` value
 			resSlice = append(resSlice, out.Result)
 			res.Result = resSlice
 			res.Rem = out.Rem
@@ -830,15 +834,15 @@ func (p Parsec) AndThen(secs []Parsec) Parsec {
 func Alt(ps ...Parsec) Parsec {
 	return func(in ParserInput) PResult {
 		rem := in
-		for _, p := range ps {
-			if rem.Empty() {
+		if rem.Empty() {
 				return PResult{
 					nil,
 					in,
 					IncompleteErr(),
 				}
-		    }
-			res := p(in)
+		}
+		for _, p := range ps {
+			res := p(rem)
 			if _, didErr := res.Errored(); !didErr {
 				return res
 			}
