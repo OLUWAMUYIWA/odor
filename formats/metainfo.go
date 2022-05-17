@@ -9,7 +9,7 @@ import (
 // https://wiki.theory.org/index.php/BitTorrentSpecification
 
 type MetaInfo struct {
-	info Info
+	Info InfoDict 
 	Announce string // url of the tracker
 
 	//optionals
@@ -19,24 +19,25 @@ type MetaInfo struct {
 	createdBy string
 	encoding string
 
-	infoHash Sha1
+	InfoH Sha1
 }
 
-type Info struct {
-	pl int // piece length. number of bytes in each piece
-	pieces   []Sha1 //muiltiple of twenty. SHAs of the piece at the corresponding index
+// InfoDict describes the files of the torrent
+type InfoDict struct {
+	PieceLen int // piece length. number of bytes in each piece
+	PiecesHash   []Sha1 //muiltiple of twenty. SHAs of the piece at the corresponding index. byte string
+	name string //name of file in single file mode, name of directory in directory mode
 
 	private bool //optional
 	isDir bool //specifies whether it is single-file mode or directory
 
-	name string //name of file in single file mode, name of directory in directory mode
 
 
-	files []Sub // if single-file mode, the slice will contain one item
+	files []Info // if single-file mode, the slice will contain one item
 
 }
 
-type Sub struct {
+type Info struct {
 	length int //length of the file in bytes
 	md5sum string
 	path string //name of the file if it is a single file. name of the directory if it is a directory
@@ -53,12 +54,12 @@ func (m MetaInfo) String() string {
 func (m *MetaInfo) GetInfoHash() (*Sha1, error) {
 	h := sha1.New()
 	benc := NewBencoder(h)
-	if err := benc.Encode(m.info); err != nil {
+	if err := benc.Encode(m.Info); err != nil {
 		return nil, err
 	}
 	sharr := *(*[20]byte)(h.Sum(nil))
 	sha := Sha1(sharr)
-	m.infoHash = sha
+	m.InfoH = sha
 	return &sha, nil
 }
 

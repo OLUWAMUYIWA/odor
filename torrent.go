@@ -4,4 +4,8 @@ import "github.com/OLUWAMUYIWA/odor/formats"
 
 type Torrent struct {
 	mInfo formats.MetaInfo
+	peers       []PeerAddr
+	pl 			int
+	name        string
 }
+

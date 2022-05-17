@@ -200,6 +200,64 @@ func ParseMessage(r io.Reader) (*Msg, error) {
 	return m, nil
 }
 
+
+
+
+func  NewChoke() *Msg {
+	m := &Msg{}
+	m.id = Choke
+	m.len = 1
+	return m
+}
+
+func  NewUnchoke() *Msg {
+	m := &Msg{}
+	m.id = Unchoke
+	m.len = 1
+	return m
+}
+
+func NewIntd() *Msg {
+	m := &Msg{}
+	m.id = Interested
+	m.len = 1
+	return m
+}
+
+func  NewUnIntd() *Msg {
+	m := &Msg{}
+	m.id = Uninterested
+	m.len = 1
+	return m
+}
+
+func  NewHave(pieceIndex uint32) *Msg {
+	m := &Msg{}
+	m.id = Have
+	m.len = 5
+	p := make([]byte, 4)
+	binary.BigEndian.PutUint32(p, pieceIndex)
+	return m
+}
+
+type Ibl struct {
+	index, begin, length uint32
+}
+
+func NewRequest(ibl Ibl) *Msg {
+	m := &Msg{}
+	m.id = Request
+	m.len = 13
+	payload := make([]byte, 12)
+	binary.BigEndian.PutUint32(payload[0:4], ibl.index)
+	binary.BigEndian.PutUint32(payload[4:8], ibl.begin)
+	binary.BigEndian.PutUint32(payload[8:12], ibl.length)
+	m.payload = payload
+	return m
+}
+
+
+
 // const connectionID uint64 = 0x41727101980
 
 // func buildConnReq() (io.Reader, error) {

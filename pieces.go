@@ -9,8 +9,6 @@ type Piece struct {
 	len int
 }
 
+// 2 ^ 14
+const BLOCK_LEN int = 16384
 
-
-func pieces(m *formats.MetaInfo) {
-
-}
