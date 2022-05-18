@@ -73,7 +73,7 @@ func (b Bitfield) Has(i int) bool {
 
 
 type Payload struct {
-	index, begin, length uint32
+	Index, Begin, Length uint32
 
 }
 
@@ -240,6 +240,7 @@ func  NewHave(pieceIndex uint32) *Msg {
 	return m
 }
 
+// Ibl Index-Begin-Length trio data structure 
 type Ibl struct {
 	index, begin, length uint32
 }
@@ -256,6 +257,23 @@ func NewRequest(ibl Ibl) *Msg {
 	return m
 }
 
+
+type PieceMsg struct {
+	Index, Begin uint32
+	Block []byte
+}
+
+func NewPieceMMsg(p PieceMsg) *Msg {
+	m := &Msg{}
+	m.id = Request
+	m.len = 9 + len(p.Block)
+	payload := make([]byte, 8 + len(p.Block))
+	binary.BigEndian.PutUint32(payload[0:4], p.Index)
+	binary.BigEndian.PutUint32(payload[4:8], p.Begin)
+	copy(payload, p.Block)
+	m.payload = payload
+	return m
+}
 
 
 // const connectionID uint64 = 0x41727101980

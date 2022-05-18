@@ -53,3 +53,8 @@ func (c *Client) Shake(h *HandShake, infoHash formats.Sha1) (*HandShake, error) 
 	return hRes, nil
 }
 
+
+
+func handleMsg(c net.Conn) {
+
+}
