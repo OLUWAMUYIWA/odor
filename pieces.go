@@ -29,7 +29,7 @@ func NewPieces(m formats.MetaInfo) PiecesState {
 }
 
 // assertReqd takes a PieceMsg` and uses it to assert that a particular block is requested
-func (p *PiecesState) assertReqd(piece formats.PieceMsg) {
+func (p *PiecesState) assertReqd(piece formats.Ibl) {
 	p.Reqd[int(piece.Index)].done[int(piece.Begin)/formats.BLOCK_LEN] = true
 
 }
@@ -50,7 +50,7 @@ func (p *PiecesState) isDone() bool {
 	return true
 }
 
-func (p *PiecesState) needed(piece formats.PieceMsg) bool {
+func (p *PiecesState) needed(piece formats.Ibl) bool {
 	allReqd := true
 	for _, p := range p.Reqd {
 		for _, b := range p.done {

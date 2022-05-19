@@ -44,3 +44,26 @@ A client refers to `us`. a client is a peer.
 Seeders are peers too, but they have the complete file. A leecher becomes a seeder when it has fully downloaded the whole file
 
 
+
+
+### Message Types
+
+- Choked: the peer does not wish to share pieces with you
+- Unchoked: the peer is willing to share with you
+- Iterested: what you send to another peer/ or another peer sends to you to indicate interest in what they/you have
+- Uninterested: opposite of `Interested`.  
+- Have: The `Have` message allows a peer to specify the piece index of the pieces it has. its payload is the piece index. This means that a peer may have to send more than one message to fully state the piece indexes it has
+- BitField: The Bitfield message is a more compact form of the `Have` message. It allows a peer to specify the piece indexes it has by using bit fields. It makes use of a strin of bits. If the peer has it, the bit is set to `1`, else `0`. The string of bits matches the number of pieces beloning to the torrent.
+- Request: The `Request` message has as it's payload the piece `index`; the `begin`, which specifies the byte offset within the piece, and the `length` which spcifies the length in bytes of the portion of the piece extending from the `begin`. These three numbers are `uint32`. The `Request` is used to specify a `block` that you want.
+- Piece: The `Piece` message is the response to the `Request` message. In it you have as the payload the piece `index`, which is same as in `Request`; the `begin`, same as in index, and the `block`, which represents the real deal we want. It is the block we have requested for.
+- cancel: it is used to cancel block requests (what you send using the `Request` message). 
+
+
+### Process: 
+1. You begin with the `HandShake`. If the is ready to communicate with you, they send a similar Handshake message in  return. If tey don't, they might just close the conection.
+2. With every peer you shake hands with, you begin by being `choke`d and `uninterested`. So, as a client, you send the `Interested` message to them, and if they send an `Unchoke` message to you, you can download from them. 
+3. If they send a `choke` back, close the connection. 
+4. Block request comes next. You use the `request`  message, specifying the block (a portion of the piece) you want from them.
+5. The peer sends you a `Piece` message in return, containing both the bytes of the block of the file being downloaded, and other info needed to put it in its place (i.e. the piece index and the begin)
+6. you may then assemble the blocks received
+

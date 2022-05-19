@@ -28,17 +28,10 @@ const (
 
 // Msg: All of the remaining messages in the protocol take the form of <length prefix><message ID><payload>
 type Msg struct {
-	len int
-	id MsgId
-	payload []byte
+	Len int
+	ID MsgId
+	Payload []byte
 }
-
-type MsgDec struct {
-	id     uint8
-	buffer *bytes.Buffer
-}
-
-
 
 type HaveIndex uint32
 
@@ -78,13 +71,13 @@ type Payload struct {
 }
 
 func (m *Msg) Marshall(w io.Writer) error {
-	switch m.id {
+	switch m.ID {
 	case Choke | Unchoke | Interested | Uninterested: // <len=0001><id=x>
 		{
 			//length
 			b := make([]byte, 5)
 			binary.BigEndian.PutUint32(b[:4], uint32(1))
-			b[4] = uint8(m.id)
+			b[4] = uint8(m.ID)
 			_, err := w.Write(b)
 			return err
 		}
@@ -92,8 +85,8 @@ func (m *Msg) Marshall(w io.Writer) error {
 		{
 			b := make([]byte, 9)
 			binary.BigEndian.PutUint32(b[:4], uint32(5))
-			b[4] = uint8(m.id)
-			n := copy(b[4:], m.payload)
+			b[4] = uint8(m.ID)
+			n := copy(b[4:], m.Payload)
 			if n != 4 {
 				return fmt.Errorf("`Have`s payload should be four bytes long")
 			}
@@ -103,11 +96,11 @@ func (m *Msg) Marshall(w io.Writer) error {
 		}
 	case BitField: // bitfield: <len=0001+X><id=5><bitfield>
 		{
-			l := len(m.payload) + 1
+			l := len(m.Payload) + 1
 			buf := make([]byte, l+4)
 			binary.BigEndian.PutUint32(buf[:4], uint32(l))
-			buf[4] = byte(m.id)
-			copy(buf[5:], m.payload)
+			buf[4] = byte(m.ID)
+			copy(buf[5:], m.Payload)
 			_, err := w.Write(buf)
 			if err != nil {
 				return err
@@ -117,8 +110,8 @@ func (m *Msg) Marshall(w io.Writer) error {
 		{
 			buf := make([]byte, 17)
 			binary.BigEndian.PutUint32(buf[:4], 13)
-			buf[4] = byte(m.id)
-			copy(buf[5:], m.payload)
+			buf[4] = byte(m.ID)
+			copy(buf[5:], m.Payload)
 			_, err := w.Write(buf)
 			if err != nil {
 				return err
@@ -126,11 +119,11 @@ func (m *Msg) Marshall(w io.Writer) error {
 		}
 	case Piece: // piece: <len=0009+X><id=7><index><begin><block>
 		{
-			l := len(m.payload) + 1
+			l := len(m.Payload) + 1
 			buf := make([]byte, l + 4)
 			binary.BigEndian.PutUint32(buf[:4], uint32(l))
-			buf[4] = byte(m.id)
-			copy(buf[5:], m.payload)
+			buf[4] = byte(m.ID)
+			copy(buf[5:], m.Payload)
 			_, err := w.Write(buf)
 			if err != nil {
 				return err
@@ -141,8 +134,8 @@ func (m *Msg) Marshall(w io.Writer) error {
 		{
 			buf := make([]byte, 17)
 			binary.BigEndian.PutUint32(buf[:4], 13)
-			buf[4] = byte(m.id)
-			copy(buf[5:], m.payload)
+			buf[4] = byte(m.ID)
+			copy(buf[5:], m.Payload)
 			_, err := w.Write(buf)
 			if err != nil {
 				return err
@@ -152,8 +145,8 @@ func (m *Msg) Marshall(w io.Writer) error {
 		{
 			buf := make([]byte, 7)
 			binary.BigEndian.PutUint32(buf[:4], 3)
-			buf[4] = byte(m.id)
-			copy(buf[5:], m.payload)
+			buf[4] = byte(m.ID)
+			copy(buf[5:], m.Payload)
 			_, err := w.Write(buf)
 			if err != nil {
 				return err
@@ -180,7 +173,7 @@ func ParseMessage(r io.Reader) (*Msg, error) {
 
 	if l == 0 {
 		// comeback: hack: i made id for keep-alive to be 10
-		return &Msg{len: l, id: KepAlive, payload: []byte{}}, nil
+		return &Msg{Len: l, ID: KepAlive, Payload: []byte{}}, nil
 	}
 
 	msg := make([]byte, l)
@@ -190,51 +183,49 @@ func ParseMessage(r io.Reader) (*Msg, error) {
 
 	id  := MsgId(msg[0]) 
 	if l == 1 {
-		return &Msg{len: 1, id: id, payload: []byte{}}, nil
+		return &Msg{Len: 1, ID: id, Payload: []byte{}}, nil
 	}
 	payload := msg[1:]
 
-	m.id = MsgId(id)
-	m.len = l
-	m.payload = payload
+	m.ID = MsgId(id)
+	m.Len = l
+	m.Payload = payload
 	return m, nil
 }
 
 
-
-
 func  NewChoke() *Msg {
 	m := &Msg{}
-	m.id = Choke
-	m.len = 1
+	m.ID = Choke
+	m.Len = 1
 	return m
 }
 
 func  NewUnchoke() *Msg {
 	m := &Msg{}
-	m.id = Unchoke
-	m.len = 1
+	m.ID = Unchoke
+	m.Len = 1
 	return m
 }
 
 func NewIntd() *Msg {
 	m := &Msg{}
-	m.id = Interested
-	m.len = 1
+	m.ID = Interested
+	m.Len = 1
 	return m
 }
 
 func  NewUnIntd() *Msg {
 	m := &Msg{}
-	m.id = Uninterested
-	m.len = 1
+	m.ID = Uninterested
+	m.Len = 1
 	return m
 }
 
 func  NewHave(pieceIndex uint32) *Msg {
 	m := &Msg{}
-	m.id = Have
-	m.len = 5
+	m.ID = Have
+	m.Len = 5
 	p := make([]byte, 4)
 	binary.BigEndian.PutUint32(p, pieceIndex)
 	return m
@@ -242,18 +233,18 @@ func  NewHave(pieceIndex uint32) *Msg {
 
 // Ibl Index-Begin-Length trio data structure 
 type Ibl struct {
-	index, begin, length uint32
+	Index, Begin, Length int
 }
 
 func NewRequest(ibl Ibl) *Msg {
 	m := &Msg{}
-	m.id = Request
-	m.len = 13
+	m.ID = Request
+	m.Len = 13
 	payload := make([]byte, 12)
-	binary.BigEndian.PutUint32(payload[0:4], ibl.index)
-	binary.BigEndian.PutUint32(payload[4:8], ibl.begin)
-	binary.BigEndian.PutUint32(payload[8:12], ibl.length)
-	m.payload = payload
+	binary.BigEndian.PutUint32(payload[0:4], uint32(ibl.Index))
+	binary.BigEndian.PutUint32(payload[4:8], uint32(ibl.Begin))
+	binary.BigEndian.PutUint32(payload[8:12], uint32(ibl.Length))
+	m.Payload = payload
 	return m
 }
 
@@ -265,13 +256,13 @@ type PieceMsg struct {
 
 func NewPieceMMsg(p PieceMsg) *Msg {
 	m := &Msg{}
-	m.id = Request
-	m.len = 9 + len(p.Block)
+	m.ID = Request
+	m.Len = 9 + len(p.Block)
 	payload := make([]byte, 8 + len(p.Block))
 	binary.BigEndian.PutUint32(payload[0:4], p.Index)
 	binary.BigEndian.PutUint32(payload[4:8], p.Begin)
 	copy(payload, p.Block)
-	m.payload = payload
+	m.Payload = payload
 	return m
 }
 

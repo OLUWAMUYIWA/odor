@@ -33,6 +33,22 @@ func Connect(ctx context.Context, addr PeerAddr) (*Client, error) {
 	return cl, nil
 }
 
+func (c *Client) reqPiece(q Queue, p PiecesState) {
+	if q.chocked {
+		return
+	}
+	for q.len() != 0 {
+		pBlock := q.deq()
+		if p.needed(pBlock) {
+			req := formats.NewRequest(pBlock)
+			req.Marshall(c.conn)
+			p.assertReqd(pBlock)
+			break
+		}
+	}
+}
+
+
 
 
 func (c *Client) Shake(h *HandShake, infoHash formats.Sha1) (*HandShake, error) {
@@ -55,6 +71,24 @@ func (c *Client) Shake(h *HandShake, infoHash formats.Sha1) (*HandShake, error) 
 
 
 
-func handleMsg(c net.Conn) {
+func handleMsg(c net.Conn, msg formats.Msg) {
+	switch msg.ID {
+	case formats.Choke:  {
+		c.Close()
+	}
+	case formats.Unchoke: {
 
+	} 
+	case formats.Have: {
+
+	}
+	case formats.BitField: {
+
+	}
+	case formats.Piece: {
+
+	}
+	}
 }
+
+

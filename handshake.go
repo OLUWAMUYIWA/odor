@@ -11,6 +11,7 @@ import (
 )
 
 const PROTOCOL = "BitTorrent protocol"
+const Null byte = 0
 
 // handshake: <pstrlen><pstr><reserved><info_hash><peer_id>
 
@@ -20,12 +21,10 @@ const PROTOCOL = "BitTorrent protocol"
 // peer_id: 20-byte string used as a unique ID for the client.
 
 type HandShake struct {
-	infoHash formats.Sha1
-	peerId   [20]byte
+	infoHash formats.Sha1 // generated from the `info` dictionary of the torrent file
+	peerId   [20]byte // random 20 bytes generated to identify the client
 }
 
-const pstr = "BitTorrent protocol"
-const Null byte = 0
 
 func NewHandShake(infoHash, peerId [20]byte) *HandShake {
 	h := &HandShake{}
@@ -71,6 +70,7 @@ func ParseHandShake(r io.Reader) (*HandShake, error) {
 		return nil, fmt.Errorf("We only support: %s", PROTOCOL)
 	}
 	//then the reserved 8 bytes
+	// trick
 	h.infoHash = *((*[20]byte)(all[pstrLen+8 : 28+pstrLen]))
 	h.peerId = *((*[20]byte)(all[28+pstrLen : 48+pstrLen]))
 	return h, nil
