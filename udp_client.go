@@ -14,26 +14,38 @@ import (
 
 	"github.com/OLUWAMUYIWA/odor/formats"
 )
+
 var TimeoutError = errors.New("Udp request Timed out!")
+
 const PORT = 6881
 
 type UDPTClient struct {
 	infoHash formats.Sha1
 	peerId   formats.Sha1
 	announce string
-	conn *net.UDPConn
+	conn     *net.UDPConn
 }
 
 const RetryFactor = 15 // 1.e. try every  15 * 2 ^ n seconds
 
+func NewUDPTClient(infoHash formats.Sha1, peerId [20]byte, announce string) *UDPTClient {
+
+	return &UDPTClient{
+		infoHash: infoHash,
+		peerId:   peerId,
+		announce: announce,
+	}
+}
+
 // https://github.com/naim94a/udpt/wiki/The-BitTorrent-UDP-tracker-protocol
 // https://www.bittorrent.org/beps/bep_0015.html
+// https://ops.tips/blog/udp-client-and-server-in-go/
 
 func (client *UDPTClient) Connect(ctx context.Context) (uint64, error) {
 	rand.Seed(time.Now().Unix())
 	txId := rand.Int31()
 
-	raddr, err  := net.ResolveUDPAddr("udp4", client.announce)
+	raddr, err := net.ResolveUDPAddr("udp4", client.announce)
 
 	if err != nil {
 		return 0, err
@@ -45,8 +57,8 @@ func (client *UDPTClient) Connect(ctx context.Context) (uint64, error) {
 	}
 	var b *bytes.Buffer
 	initConnId := uint64(0x41727101980) // initial connection id
-	initAction := uint32(0) // action number for connection request
-	
+	initAction := uint32(0)             // action number for connection request
+
 	//set up connection request
 	binary.Write(b, binary.BigEndian, &initConnId)
 	binary.Write(b, binary.BigEndian, &initAction)
@@ -57,11 +69,11 @@ func (client *UDPTClient) Connect(ctx context.Context) (uint64, error) {
 	n := 1
 	req := func() {
 		go func() {
-			duration := time.Second * 15 * time.Duration(2 ^ n)
+			duration := time.Second * 15 * time.Duration(2^n)
 			n += 1
 			err = c.SetDeadline(time.Now().Add(duration))
 			if err != nil {
-				done <- err 
+				done <- err
 				return
 			}
 			defer c.SetDeadline(time.Time{}) // disable deadline by setting it to zero, else the deadline will apply to all I/O on this connection
@@ -84,7 +96,7 @@ func (client *UDPTClient) Connect(ctx context.Context) (uint64, error) {
 		}()
 
 		select {
-		case <- ctx.Done():
+		case <-ctx.Done():
 			err = ctx.Err()
 		case err = <-done:
 			{
@@ -116,27 +128,26 @@ func (client *UDPTClient) Connect(ctx context.Context) (uint64, error) {
 
 }
 
-
-func (client *UDPTClient) Announce(ctx context.Context,  connId uint64, size uint64) (*AnnounceResp, error) {
+func (client *UDPTClient) Announce(ctx context.Context, connId uint64, size uint64) (*AnnounceResp, error) {
 	var b bytes.Buffer
-	buf := make([]byte, 8)  //reusable buffer
+	buf := make([]byte, 8) //reusable buffer
 	binary.BigEndian.PutUint64(buf, connId)
 	b.Write(buf) //write connId from server
 	binary.BigEndian.PutUint32(buf[0:4], uint32(1))
 	b.Write(buf[:4]) // write action number forannounce
 	txId := rand.Int31()
 	binary.BigEndian.PutUint32(buf[:4], uint32(txId))
-	b.Write(buf[:4]) // write new transaction ID
+	b.Write(buf[:4])            // write new transaction ID
 	b.Write(client.infoHash[:]) // write the info_hash of the torrent that is being announced
-	b.Write(client.peerId[:]) // write the peer ID of the client announcing itself
+	b.Write(client.peerId[:])   // write the peer ID of the client announcing itself
 	empty := make([]byte, 8, 8)
 	b.Write(empty) // write bytes downloaded by client this session
 	binary.BigEndian.PutUint64(buf, size)
-	b.Write(buf) // write bytes left to complete the download
+	b.Write(buf)   // write bytes left to complete the download
 	b.Write(empty) // write bytes uploaded this session
 	binary.BigEndian.PutUint32(buf[:4], uint32(0))
 	b.Write(buf[:4]) // event. zero for none
-	b.Write(empty) // write IP address, default set to 0  
+	b.Write(empty)   // write IP address, default set to 0
 	key := make([]byte, 4)
 	_, err := rand.Read(key)
 	if err != nil {
@@ -150,17 +161,17 @@ func (client *UDPTClient) Announce(ctx context.Context,  connId uint64, size uin
 	b.Write(buf[:2])
 
 	c := client.conn
-	resp := make([]byte, 1024)	
+	resp := make([]byte, 1024)
 	done := make(chan error, 1)
 	var a *AnnounceResp
 	n := 1
-	req := func () {
-		go func () {
-			duration := time.Second * 15 * time.Duration(2 ^ n)
+	req := func() {
+		go func() {
+			duration := time.Second * 15 * time.Duration(2^n)
 			n += 1
 			err = c.SetDeadline(time.Now().Add(duration))
 			if err != nil {
-				done <- err 
+				done <- err
 				return
 			}
 			defer c.SetDeadline(time.Time{}) // disable deadline by setting it to zero, else the deadline will apply to all I/O on this connection
@@ -175,7 +186,7 @@ func (client *UDPTClient) Announce(ctx context.Context,  connId uint64, size uin
 				done <- err
 				return
 			}
-			
+
 			_, _, err = c.ReadFromUDP(resp)
 			if err != nil {
 				done <- err
@@ -183,19 +194,19 @@ func (client *UDPTClient) Announce(ctx context.Context,  connId uint64, size uin
 			}
 		}()
 
-		select{
-		case <- ctx.Done():
+		select {
+		case <-ctx.Done():
 			err = ctx.Err()
-		case err = <-done :
+		case err = <-done:
 		}
 	}
 	req()
-	 for err != nil {
-	 	req()
-	 	if n > 8 {
-	 		return nil, TimeoutError
-	 	}
-	 }
+	for err != nil {
+		req()
+		if n > 8 {
+			return nil, TimeoutError
+		}
+	}
 
 	a, err = ParseAnnounceResp(resp)
 	if err != nil {
@@ -206,18 +217,17 @@ func (client *UDPTClient) Announce(ctx context.Context,  connId uint64, size uin
 }
 
 type AnnounceResp struct {
-	txId uint32
+	txId     uint32
 	interval uint32
 	leechers uint32
-	seeders uint32
-	socks []PeerAddr
+	seeders  uint32
+	socks    []PeerAddr
 }
 
 type PeerAddr struct {
 	ipv4 net.IP
 	port uint16
 }
-
 
 // comeback
 func ParseAnnounceResp(b []byte) (*AnnounceResp, error) {
@@ -235,15 +245,15 @@ func ParseAnnounceResp(b []byte) (*AnnounceResp, error) {
 	socks := []PeerAddr{}
 	b = b[16:]
 	l := len(b)
-	if l % 6 != 0 {
+	if l%6 != 0 {
 		return nil, fmt.Errorf("Error parsing announce request: remainder should be divisible by 6 to be parseable")
 	}
-	
+
 	for i := 0; i < l-6; i += 6 {
-		s := b[i:i+6]
+		s := b[i : i+6]
 		ip := net.IP(s[:4])
 		port := binary.BigEndian.Uint16(s[4:])
-		socks= append(socks, PeerAddr{ip, port})
+		socks = append(socks, PeerAddr{ip, port})
 	}
 	return a, nil
 }

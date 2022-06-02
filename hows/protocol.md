@@ -28,11 +28,10 @@ Esentially, bittorrent needs the following:
 Its a static file. its `bencoded`. it must contain the address of the tracker, the name of the file,, size, and piece hashes for validatin each downloaded piece
 
 #### Peer
-A peer refers to a participating node in a downloa. A peer could be a leecher or a seeder. The fact that BitTorrent nodes consists of peers makes it a p2p protocol. The `Tracker` is the node that trumps them all, it is the central node, and not a peer
+A peer refers to a participating node in a torent. A peer could be a leecher or a seeder. WRT you, Peers are other users participating in a torrent, and have the partial file, or the complete file. When they have complete file, they are known as `seed`s. The fact that BitTorrent nodes consists of peers makes it a p2p protocol. The `Tracker` is the node that trumps them all, it is the central node, and not a peer
 
 #### Tracker
-Trackers exist for peer discovery, morally. Trackers dont have the file to be downloaded. It keeps a list of peers that are currently
-downloading a file. Thislist of peers are constantly being updated. The list of `peer`s contained in the tracker is called a `swarm`. Tracker and clients communicate using either utp or http.
+Trackers exist for peer discovery, morally. Trackers dont have the file to be downloaded. It keeps a list of peers that are currently downloading a file. This list of peers are constantly being updated. The list of `peer`s contained in the tracker is called a `swarm`. Tracker and clients communicate using either utp or http. The tracker is constantly replying to connecting peers with a list of peers who have the requested pieces.
 
 #### Leecher
 A leecher is a peer who does not yet have the complete set of the file. the leecher communicates with the `tracker`, requesting for the list of peers. It downloads `piece`s from the peers, and simultaneously makes available its already downloaded pieces to other leechers. Each piece is verified against its `Sha1` hash which is already in the `MetaInfo` file. A leecher does not need to become a seeder before it starts making its pieces availavle for download.
@@ -67,3 +66,7 @@ Seeders are peers too, but they have the complete file. A leecher becomes a seed
 5. The peer sends you a `Piece` message in return, containing both the bytes of the block of the file being downloaded, and other info needed to put it in its place (i.e. the piece index and the begin)
 6. you may then assemble the blocks received
 
+### Piece Selection
+1. Random First Piece: The first strategy. The peer has nothing to upload yet when it begins. So it selects a piece at random for download. The client continuously selects random pieces until the first piece is fully downloaded and checked. After this, it changes strategy to Rarest first
+2. Rarest First: At the beginning of the lifespan of a torrent, only one Seed is assumed to exist. If so many peers wre trying to access one single piece, it becomes a bottleneck. To prevent this, Rarest-First strategy suggests that the client asks for the Piece held by the lowest number of peers. Such pieces change as peers request and download pieces and incoming peers make their own request. A piece that is rarest at this moment likely won't be in the next few moments after a sufficient number of peers ask for it. Load becomes better distributed in the system. . Rarest first also works to prevent the possible loss of pieces due to the disconnection/uavailability of seed(s). It does this by replicating the pieces most at risk as quickly as possible. Genius move!
+3. EndGame Mode: Near the end of a download, a download might slow down because the lingering downloads are from peers with slow transfer rates. In such a situation, the client switches to EndGame Mode. Here, the remaining sub-pieces are requested from all peers in the current swarm. 
