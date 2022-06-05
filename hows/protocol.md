@@ -53,7 +53,7 @@ Seeders are peers too, but they have the complete file. A leecher becomes a seed
 - Uninterested: opposite of `Interested`.  
 - Have: The `Have` message allows a peer to specify the piece index of the pieces it has. its payload is the piece index. This means that a peer may have to send more than one message to fully state the piece indexes it has
 - BitField: The Bitfield message is a more compact form of the `Have` message. It allows a peer to specify the piece indexes it has by using bit fields. It makes use of a strin of bits. If the peer has it, the bit is set to `1`, else `0`. The string of bits matches the number of pieces beloning to the torrent.
-- Request: The `Request` message has as it's payload the piece `index`; the `begin`, which specifies the byte offset within the piece, and the `length` which spcifies the length in bytes of the portion of the piece extending from the `begin`. These three numbers are `uint32`. The `Request` is used to specify a `block` that you want.
+- Request: The `Request` message has as it's payload the piece `index`; the `begin`, which specifies the byte offset within the piece, and the `length` which specifies the length in bytes of the portion of the piece extending from the `begin`. These three numbers are `uint32`. The `Request` is used to specify a `block` that you want.
 - Piece: The `Piece` message is the response to the `Request` message. In it you have as the payload the piece `index`, which is same as in `Request`; the `begin`, same as in index, and the `block`, which represents the real deal we want. It is the block we have requested for.
 - cancel: it is used to cancel block requests (what you send using the `Request` message). 
 
