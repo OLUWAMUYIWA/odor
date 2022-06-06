@@ -28,9 +28,37 @@ const (
 
 // Msg: All of the remaining messages in the protocol take the form of <length prefix><message ID><payload>
 type Msg struct {
-	Len int
-	ID MsgId
+	Len     int
+	ID      MsgId
 	Payload []byte
+}
+
+// Stringer impl of Msg so i can print out the type
+func (m Msg) String() string {
+	switch m.ID {
+	case Choke:
+		return "Choke"
+	case Unchoke:
+		return "Unchoke"
+	case Interested:
+		return "Interested"
+	case Uninterested:
+		return "Uninterested"
+	case Have:
+		return ""
+	case BitField:
+		return "BitField"
+	case Request:
+		return "Request"
+	case Piece:
+		return "Piece"
+	case Cancel:
+		return "Cancel"
+	case Port:
+		return "Port"
+	default:
+		return "Unknown"
+	}
 }
 
 type HaveIndex uint32
@@ -46,7 +74,7 @@ func (b Bitfield) Set(i int) error {
 	if pos < 0 || pos >= len(b) {
 		return fmt.Errorf("Out of bounds")
 	}
-	b[pos] = b[pos] | (1 << uint(7 - off))
+	b[pos] = b[pos] | (1 << uint(7-off))
 	return nil
 }
 
@@ -62,12 +90,8 @@ func (b Bitfield) Has(i int) bool {
 	return b[pos]>>uint(7-off)&1 != 0
 }
 
-
-
-
 type Payload struct {
 	Index, Begin, Length uint32
-
 }
 
 func (m *Msg) Marshall(w io.Writer) error {
@@ -104,7 +128,7 @@ func (m *Msg) Marshall(w io.Writer) error {
 			_, err := w.Write(buf)
 			if err != nil {
 				return err
-			} 
+			}
 		}
 	case Request: // request: <len=0013><id=6><index><begin><length>
 		{
@@ -115,19 +139,19 @@ func (m *Msg) Marshall(w io.Writer) error {
 			_, err := w.Write(buf)
 			if err != nil {
 				return err
-			} 
+			}
 		}
 	case Piece: // piece: <len=0009+X><id=7><index><begin><block>
 		{
 			l := len(m.Payload) + 1
-			buf := make([]byte, l + 4)
+			buf := make([]byte, l+4)
 			binary.BigEndian.PutUint32(buf[:4], uint32(l))
 			buf[4] = byte(m.ID)
 			copy(buf[5:], m.Payload)
 			_, err := w.Write(buf)
 			if err != nil {
 				return err
-			} 
+			}
 
 		}
 	case Cancel: // <len=0013><id=8><index><begin><length>
@@ -139,7 +163,7 @@ func (m *Msg) Marshall(w io.Writer) error {
 			_, err := w.Write(buf)
 			if err != nil {
 				return err
-			} 
+			}
 		}
 	case Port: // <len=0003><id=9><listen-port>
 		{
@@ -150,17 +174,17 @@ func (m *Msg) Marshall(w io.Writer) error {
 			_, err := w.Write(buf)
 			if err != nil {
 				return err
-			} 
+			}
 		}
-	case KepAlive: {
-		if _, err := w.Write(bytes.Repeat([]byte{0}, 4)); err != nil {
-			return err
+	case KepAlive:
+		{
+			if _, err := w.Write(bytes.Repeat([]byte{0}, 4)); err != nil {
+				return err
+			}
 		}
-	}
 	}
 	return nil
 }
-
 
 func ParseMessage(r io.Reader) (*Msg, error) {
 	m := &Msg{}
@@ -169,7 +193,6 @@ func ParseMessage(r io.Reader) (*Msg, error) {
 		return nil, err
 	}
 	l := int(binary.BigEndian.Uint32(lBuf))
-
 
 	if l == 0 {
 		// comeback: hack: i made id for keep-alive to be 10
@@ -181,7 +204,7 @@ func ParseMessage(r io.Reader) (*Msg, error) {
 		return nil, err
 	}
 
-	id  := MsgId(msg[0]) 
+	id := MsgId(msg[0])
 	if l == 1 {
 		return &Msg{Len: 1, ID: id, Payload: []byte{}}, nil
 	}
@@ -193,15 +216,14 @@ func ParseMessage(r io.Reader) (*Msg, error) {
 	return m, nil
 }
 
-
-func  NewChoke() *Msg {
+func NewChoke() *Msg {
 	m := &Msg{}
 	m.ID = Choke
 	m.Len = 1
 	return m
 }
 
-func  NewUnchoke() *Msg {
+func NewUnchoke() *Msg {
 	m := &Msg{}
 	m.ID = Unchoke
 	m.Len = 1
@@ -215,14 +237,14 @@ func NewIntd() *Msg {
 	return m
 }
 
-func  NewUnIntd() *Msg {
+func NewUnIntd() *Msg {
 	m := &Msg{}
 	m.ID = Uninterested
 	m.Len = 1
 	return m
 }
 
-func  NewHave(pieceIndex uint32) *Msg {
+func NewHave(pieceIndex uint32) *Msg {
 	m := &Msg{}
 	m.ID = Have
 	m.Len = 5
@@ -231,7 +253,7 @@ func  NewHave(pieceIndex uint32) *Msg {
 	return m
 }
 
-// Ibl Index-Begin-Length trio data structure 
+// Ibl Index-Begin-Length trio data structure
 type Ibl struct {
 	Index, Begin, Length int
 }
@@ -248,24 +270,22 @@ func NewRequest(ibl Ibl) *Msg {
 	return m
 }
 
-
 type PieceMsg struct {
 	Index, Begin uint32
-	Block []byte
+	Block        []byte
 }
 
 func NewPieceMMsg(p PieceMsg) *Msg {
 	m := &Msg{}
 	m.ID = Request
 	m.Len = 9 + len(p.Block)
-	payload := make([]byte, 8 + len(p.Block))
+	payload := make([]byte, 8+len(p.Block))
 	binary.BigEndian.PutUint32(payload[0:4], p.Index)
 	binary.BigEndian.PutUint32(payload[4:8], p.Begin)
 	copy(payload, p.Block)
 	m.Payload = payload
 	return m
 }
-
 
 // const connectionID uint64 = 0x41727101980
 

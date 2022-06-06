@@ -13,19 +13,18 @@ import (
 )
 
 type Client struct {
-	conn net.Conn
+	conn     net.Conn
 	infoHash formats.Sha1
-	addr PeerAddr
-	peerID [20]byte
-	isChocked bool
-	b formats.Bitfield
+	addr     PeerAddr
+	peerID   [20]byte
+	state    bool // choked or not
+	b        formats.Bitfield
 }
-
 
 func Connect(ctx context.Context, addr PeerAddr) (*Client, error) {
 	cl := &Client{}
 	a := net.JoinHostPort(addr.ipv4.String(), strconv.Itoa(int(addr.port)))
-	conn, err := net.DialTimeout("tcp", a, time.Second * 5)
+	conn, err := net.DialTimeout("tcp", a, time.Second*5)
 	if err != nil {
 		return nil, err
 	}
@@ -33,6 +32,37 @@ func Connect(ctx context.Context, addr PeerAddr) (*Client, error) {
 	return cl, nil
 }
 
+func (c *Client) Shake(h *HandShake, infoHash formats.Sha1) (*HandShake, error) {
+	// write the handshae to the connection
+	if _, err := io.Copy(c.conn, h.Marshall()); err != nil {
+		return nil, err
+	}
+	// read and parse the handshake response from the connection
+	hRes, err := ParseHandShake(c.conn)
+	if err != nil {
+		return nil, err
+	}
+
+	if bytes.Compare(infoHash[:], hRes.infoHash[:]) != 0 {
+		return nil, fmt.Errorf("nvalid infoHash otten. expected: % x. Got % x", infoHash, hRes.infoHash)
+	}
+
+	return hRes, nil
+}
+
+func (c *Client) ParseBitField() (formats.Bitfield, error) {
+	c.conn.SetDeadline(time.Now().Add(5 * time.Second))
+	defer c.conn.SetDeadline(time.Time{})
+	msg, err := formats.ParseMessage(c.conn)
+	if err != nil {
+		return nil, err
+	}
+	if msg.ID != formats.BitField {
+		return nil, fmt.Errorf("Expected bitfield, got: %s", *msg)
+	}
+	b := formats.Bitfield(msg.Payload)
+	return b, nil
+}
 func (c *Client) reqPiece(q Queue, p PiecesState) {
 	if q.chocked {
 		return
@@ -48,47 +78,27 @@ func (c *Client) reqPiece(q Queue, p PiecesState) {
 	}
 }
 
-
-
-
-func (c *Client) Shake(h *HandShake, infoHash formats.Sha1) (*HandShake, error) {
-	// write the handshae to the connection
-	if _, err := io.Copy(c.conn, h.Marshall()); err != nil {
-		return nil, err
-	}
-	// read and parse the handshake response from the connection
-	hRes, err := ParseHandShake(c.conn)
-	if err != nil {
-		return nil, err
-	} 
-
-	if bytes.Compare(infoHash[:], hRes.infoHash[:]) != 0 {
-		return nil, fmt.Errorf("nvalid infoHash otten. expected: % x. Got % x", infoHash, hRes.infoHash)
-	}
-
-	return hRes, nil
-}
-
-
-
 func handleMsg(c net.Conn, msg formats.Msg) {
 	switch msg.ID {
-	case formats.Choke:  {
-		c.Close()
-	}
-	case formats.Unchoke: {
+	case formats.Choke:
+		{
+			c.Close()
+		}
+	case formats.Unchoke:
+		{
 
-	} 
-	case formats.Have: {
+		}
+	case formats.Have:
+		{
 
-	}
-	case formats.BitField: {
+		}
+	case formats.BitField:
+		{
 
-	}
-	case formats.Piece: {
+		}
+	case formats.Piece:
+		{
 
-	}
+		}
 	}
 }
-
-
