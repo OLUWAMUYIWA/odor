@@ -21,8 +21,6 @@ type MetaInfo struct {
 	Comment      string
 	CreatedBy    string
 	Encoding     string
-
-	InfoH Sha1
 }
 
 // InfoDict describes the files of the torrent
@@ -51,16 +49,15 @@ func (m MetaInfo) String() string {
 	)
 }
 
-func (m *MetaInfo) GetInfoHash() (*Sha1, error) {
+func (m MetaInfo) GetInfoHash() (Sha1, error) {
 	h := sha1.New()
 	benc := NewBencoder(h)
 	if err := benc.Encode(m.Info); err != nil {
-		return nil, err
+		return Sha1{}, err
 	}
 	sharr := *(*[20]byte)(h.Sum(nil))
 	sha := Sha1(sharr)
-	m.InfoH = sha
-	return &sha, nil
+	return sha, nil
 }
 
 // Size gives the total size (in bytes) of the torrent, whether its a single file or not

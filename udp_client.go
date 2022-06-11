@@ -229,7 +229,7 @@ type PeerAddr struct {
 	port uint16
 }
 
-// comeback
+// comeback add verify code
 func ParseAnnounceResp(b []byte) (*AnnounceResp, error) {
 	a := &AnnounceResp{}
 	if len(b) < 2 { // actually unnecessary
@@ -256,4 +256,13 @@ func ParseAnnounceResp(b []byte) (*AnnounceResp, error) {
 		socks = append(socks, PeerAddr{ip, port})
 	}
 	return a, nil
+}
+
+func GetPeers(ctx context.Context, t Torrent) (*AnnounceResp, error) {
+	udptc := NewUDPTClient(t.InfoH, peerId, t.mInfo.Announce)
+	connID, err := udptc.Connect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return udptc.Announce(ctx, connID, uint64(t.size))
 }

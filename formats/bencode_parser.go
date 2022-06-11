@@ -12,35 +12,33 @@ import (
 	"github.com/OLUWAMUYIWA/odor/parsec"
 )
 
-
 type BencInput struct {
 	r *bufio.Reader
 }
-
 
 func NewBencInput(r io.Reader) *BencInput {
 	return &BencInput{
 		r: bufio.NewReader(r),
 	}
 }
+
 // basically a peek but returned. the input must not be changed after a Car
 func (b *BencInput) Car() rune {
-	r,_,_ := b.r.ReadRune()
+	r, _, _ := b.r.ReadRune()
 	b.r.UnreadRune()
 	return r
 }
 
 // read what was last read+unread by Car and drop
 func (b *BencInput) Cdr() parsec.ParserInput {
-	_,_,_ = b.r.ReadRune()
+	_, _, _ = b.r.ReadRune()
 	return b
 }
 
-
-// we say that any error here is due to EOF, but that's unsound. There 
+// we say that any error here is due to EOF, but that's unsound. There
 // might be an error while interpreting the rune. //comeback
 func (b *BencInput) Empty() bool {
-	_, _,e := b.r.ReadRune()
+	_, _, e := b.r.ReadRune()
 
 	if e != nil {
 		return false
@@ -50,46 +48,45 @@ func (b *BencInput) Empty() bool {
 	return true
 }
 
-func BencStr() parsec.Parsec{
+func BencStr() parsec.Parsec {
 	return func(in parsec.ParserInput) parsec.PResult {
 		rem := in
 		if in.Empty() {
 			return parsec.PResult{
 				Result: nil,
-				Rem: rem,
-				Err: parsec.IncompleteErr(),
+				Rem:    rem,
+				Err:    parsec.IncompleteErr(),
 			}
 		}
 		numRes := parsec.Number()(rem)
 		if err, didErr := numRes.Errored(); didErr {
-			return parsec.PResult{Result: nil, Rem: in, Err: err.(*(parsec.ParsecErr)) }
-		} 
+			return parsec.PResult{Result: nil, Rem: in, Err: err.(*(parsec.ParsecErr))}
+		}
 		rem = numRes.Rem
 		resColon := parsec.Tag(':')(rem)
-		
+
 		if err, didErr := resColon.Errored(); didErr {
-			return parsec.PResult{Result: nil, Rem: in, Err: err.(*(parsec.ParsecErr)) }
-		} 
+			return parsec.PResult{Result: nil, Rem: in, Err: err.(*(parsec.ParsecErr))}
+		}
 		num := numRes.Result.(int)
 		rem = resColon.Rem
 		if num == 0 { // the case of the empty string: `0:`
 			return parsec.PResult{
 				Result: "",
-				Rem: rem,
-				Err: nil,
+				Rem:    rem,
+				Err:    nil,
 			}
 		}
 
 		// non-empty string
 		res := parsec.StrN(num)(rem)
 		if err, didErr := res.Errored(); didErr {
-			return parsec.PResult{Result: nil, Rem: in, Err: err.(*(parsec.ParsecErr)) }
-		} 
+			return parsec.PResult{Result: nil, Rem: in, Err: err.(*(parsec.ParsecErr))}
+		}
 
 		return res
 	}
 }
-
 
 func BencInt() parsec.Parsec {
 	guardedInt := parsec.GuardedWhile('i', 'e', func(r rune) bool {
@@ -105,9 +102,7 @@ func BencInt() parsec.Parsec {
 	}
 }
 
-
-// BencList
-// possible return types: slice of strings, slice of ints, slice of maps, slice of slices of any of th above
+// BencList:  possible return types: slice of strings, slice of ints, slice of maps, slice of slices of any of th above
 func BencList() parsec.Parsec {
 	pre := parsec.Tag('l')
 	last := parsec.Tag('e')
@@ -118,7 +113,7 @@ func BencList() parsec.Parsec {
 	return func(in parsec.ParserInput) parsec.PResult {
 		res := pre(in)
 		if err, didErr := res.Errored(); didErr {
-			return parsec.PResult{Result: nil,Rem:  in, Err:  err}
+			return parsec.PResult{Result: nil, Rem: in, Err: err}
 		}
 		rem := res.Rem
 
@@ -132,9 +127,9 @@ func BencList() parsec.Parsec {
 		//might be a list of lists
 		l := [][]any{}
 		listsRes := parsec.PResult{
-			Result: l, 
-			Rem: in, 
-			Err: nil,
+			Result: l,
+			Rem:    in,
+			Err:    nil,
 		}
 
 		for {
@@ -142,16 +137,16 @@ func BencList() parsec.Parsec {
 			if err, didErr := res.Errored(); didErr {
 				return parsec.PResult{
 					Result: nil,
-					Rem: in,
-					Err: err,
+					Rem:    in,
+					Err:    err,
 				}
 			}
 			currRes, ok := res.Result.([]any)
 			if !ok {
 				return parsec.PResult{
 					Result: nil,
-					Rem: in,
-					Err: parsec.UnmatchedErr(),
+					Rem:    in,
+					Err:    parsec.UnmatchedErr(),
 				}
 			}
 			l = append(l, currRes) // would be a slice of any of the possible types a list can contain
@@ -160,20 +155,20 @@ func BencList() parsec.Parsec {
 
 			// now check whether to exit the loop or not
 			end := last(rem)
-			if err, didErr := end.Errored(); didErr && errors.Is(err, parsec.UnmatchedErr()) { 
+			if err, didErr := end.Errored(); didErr && errors.Is(err, parsec.UnmatchedErr()) {
 				// UnmatchedErr means the rune does not match, meaning that we're not done yet, but theres more data to go
 				continue
-			} else if errors.Is(err, parsec.IncompleteErr()){ // there's no more data to eat, therefore, the list is open-ended: incomplete
+			} else if errors.Is(err, parsec.IncompleteErr()) { // there's no more data to eat, therefore, the list is open-ended: incomplete
 				return parsec.PResult{
 					Result: nil,
-					Rem: in,
-					Err: parsec.IncompleteErr(),
+					Rem:    in,
+					Err:    parsec.IncompleteErr(),
 				}
 			} else { // we have reached the end: the rune `e`, which ends the list matches
 				return listsRes
 			}
 		}
-		
+
 	}
 
 }
@@ -197,8 +192,8 @@ func BenDict() parsec.Parsec {
 		rem := res.Rem
 		mapRes := parsec.PResult{
 			Result: dict,
-			Rem: in,
-			Err: nil,
+			Rem:    in,
+			Err:    nil,
 		}
 		for {
 			keyRes := key(rem)
@@ -215,8 +210,8 @@ func BenDict() parsec.Parsec {
 					if err, didErr := res.Errored(); didErr { // ow, we have no other type to match, we have erred
 						return parsec.PResult{
 							Result: nil,
-							Rem: in,
-							Err: err,
+							Rem:    in,
+							Err:    err,
 						}
 					} else { // in this case, we were right. it is a dictionary
 						dict[k] = res.Result
@@ -224,8 +219,8 @@ func BenDict() parsec.Parsec {
 				} else if errors.Is(err, parsec.IncompleteErr()) { // we have an error here. a key without a value
 					return parsec.PResult{
 						Result: nil,
-						Rem: in,
-						Err: parsec.IncompleteErr(),
+						Rem:    in,
+						Err:    parsec.IncompleteErr(),
 					}
 				} // there's no `else` because we have only two kinds of errors
 
@@ -236,39 +231,41 @@ func BenDict() parsec.Parsec {
 
 			// in any case, we then check if we're done
 			end := suffix(rem)
-			if err, didErr := end.Errored(); didErr && errors.Is(err, parsec.UnmatchedErr()){ // not yet done
+			if err, didErr := end.Errored(); didErr && errors.Is(err, parsec.UnmatchedErr()) { // not yet done
 				continue
-			} else if errors.Is(err, parsec.IncompleteErr()){
+			} else if errors.Is(err, parsec.IncompleteErr()) {
 				return parsec.PResult{ // certainly has to be an error. the dictionary is open-ended, not terminated by a `e`
 					Result: nil,
-					Rem: in,
-					Err: parsec.IncompleteErr(),
+					Rem:    in,
+					Err:    parsec.IncompleteErr(),
 				}
 			} else { // it matches the end
 				mapRes.Rem = end.Rem // the remainder becomes the remainder after the terminator has been taken
 				mapRes.Result = dict // just to be double-sure. comeback: may not be necessary
-				break // we break ou of the loop
+				break                // we break ou of the loop
 			}
 		}
 
 		return mapRes
-		
+
 	}
 }
 
-
-
-
-type Decoder struct {
+type BencDecoder struct {
 	r io.Reader
 }
 
+func NewBencDecoder(r io.Reader) *BencDecoder {
+	return &BencDecoder{
+		r: r,
+	}
+}
 
 func ParseBenc(in parsec.ParserInput, m map[string]interface{}) error {
 	return nil
 }
 
-func (d *Decoder) Decode(structure any) error {
+func (d *BencDecoder) Decode(structure any) error {
 
 	m := make(map[string]interface{})
 	r := bufio.NewReader(d.r)
@@ -298,32 +295,37 @@ func (d *Decoder) Decode(structure any) error {
 		tagValue := field.Tag.Get("benc")
 
 		if tagValue == "" {
-            continue
-        }
-        kind := field.Type.Kind()
+			continue
+		}
+		kind := field.Type.Kind()
 
-        switch kind {
-        case reflect.String: {
+		switch kind {
+		case reflect.String:
+			{
 
-        }
+			}
 
-    	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64: {
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			{
 
-    	}
+			}
 
-    	case reflect.Slice: {
+		case reflect.Slice:
+			{
 
-    	}
+			}
 
-    	case reflect.Map: {
+		case reflect.Map:
+			{
 
-    	} 
+			}
 
-    	default: {
-    		return fmt.Errorf("Data Type Not supported")
-    	}
+		default:
+			{
+				return fmt.Errorf("Data Type Not supported")
+			}
 
-        }
+		}
 	}
 	return nil
 }
