@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha1"
 	"os"
 
 	"sync"
@@ -15,8 +17,9 @@ type Torrent struct {
 	InfoH formats.Sha1 // infohash
 	size  int          // size of torrent file in bytes
 	peers []PeerAddr
-	pl    int
-	name  string
+	// pl    int
+	name    string
+	clients []*PeerConn // list of connections to peers this client is connected to
 }
 
 var once sync.Once
@@ -33,11 +36,36 @@ func Init() {
 	once.Do(getPerID)
 }
 
-func NewTorrent(path string) (*Torrent, error) {
+// Connect connects to a peer and does the handshake, requests bitfields/ haves,
+func (t *Torrent) Connect(ctx context.Context, addr PeerAddr) error {
+	// create new connection with a peer
+	if cl, err := NewConn(ctx, addr); err != nil {
+		return err
+	} else {
+		h := NewHandShake(t.InfoH, peerId)
+
+		// handshake with peer
+		err := cl.Shake(h)
+		if err != nil {
+			return err
+		}
+
+		// et the pieces the peer has
+		if err = cl.ReqBitFields(); err != nil {
+			return err
+		}
+		// comeback to check state. suppose it begins with being choked and interested
+		cl.state = ChkdIntd
+		// now add the client to the client list
+		t.clients = append(t.clients, cl)
+		return nil
+	}
+}
+func NewTorrent(torrPath, fPath string) (*Torrent, error) {
 	var t Torrent
 	ctx := context.TODO()
 	// open torrent file
-	file, err := os.OpenFile(path, os.O_RDONLY, 0)
+	file, err := os.OpenFile(torrPath, os.O_RDONLY, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -64,11 +92,22 @@ func NewTorrent(path string) (*Torrent, error) {
 	}
 	t.peers = annResp.socks
 
-	// now o and download
 	return &t, nil
 
 }
-func (t *Torrent) Start(path string) error {
+func (t *Torrent) Start() error {
 
 	return nil
+}
+
+// verifyPiece checks if the sha1 hash of a fully downloaded piece is what we expected as compared with the PieceHash in its index
+// returns a boolean
+func (t Torrent) verifyPiece(index int, pieceBytes []byte) bool {
+	sha := sha1.New()
+	sha.Write(pieceBytes)
+	hash := sha.Sum(nil)
+	if bytes.Compare(hash, t.mInfo.Info.PiecesHash[index][:]) != 0 {
+		return false
+	}
+	return true
 }

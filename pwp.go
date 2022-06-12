@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -12,17 +11,31 @@ import (
 	"github.com/OLUWAMUYIWA/odor/formats"
 )
 
-type Client struct {
-	conn     net.Conn
-	infoHash formats.Sha1
-	addr     PeerAddr
-	peerID   [20]byte
-	state    bool // choked or not
-	b        formats.Bitfield
+type ConnState uint8
+
+const (
+	Chkd ConnState = iota
+	UnChkd
+	Intd
+	UnIntd
+	ChkdIntd     = Chkd | Intd
+	ChkdUnIntd   = Chkd | UnIntd
+	UnChkdIntd   = UnChkd | Intd
+	UnchkdUnIntd = UnChkd | UnIntd
+)
+
+// PeerConn represents a connection between our client and another peer
+type PeerConn struct {
+	conn  net.Conn
+	addr  PeerAddr
+	state ConnState
+	b     formats.Bitfield
+	haves []int // if the peer does not use bitfield it must be using haves
 }
 
-func Connect(ctx context.Context, addr PeerAddr) (*Client, error) {
-	cl := &Client{}
+// NewConn creates a tcp connection with a new per
+func NewConn(ctx context.Context, addr PeerAddr) (*PeerConn, error) {
+	cl := &PeerConn{}
 	a := net.JoinHostPort(addr.ipv4.String(), strconv.Itoa(int(addr.port)))
 	conn, err := net.DialTimeout("tcp", a, time.Second*5)
 	if err != nil {
@@ -32,38 +45,40 @@ func Connect(ctx context.Context, addr PeerAddr) (*Client, error) {
 	return cl, nil
 }
 
-func (c *Client) Shake(h *HandShake, infoHash formats.Sha1) (*HandShake, error) {
-	// write the handshae to the connection
+func (c *PeerConn) Shake(h *HandShake) error {
+	// write the handshake to the connection
 	if _, err := io.Copy(c.conn, h.Marshall()); err != nil {
-		return nil, err
+		return err
 	}
 	// read and parse the handshake response from the connection
 	hRes, err := ParseHandShake(c.conn)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	if bytes.Compare(infoHash[:], hRes.infoHash[:]) != 0 {
-		return nil, fmt.Errorf("nvalid infoHash otten. expected: % x. Got % x", infoHash, hRes.infoHash)
+	if !verifyhandShake(h, hRes) {
+		return fmt.Errorf("Invalid infoHash gotten. expected: % x. Got % x", h.infoHash, hRes.infoHash)
 	}
 
-	return hRes, nil
+	return nil
 }
 
-func (c *Client) ParseBitField() (formats.Bitfield, error) {
+func (c *PeerConn) ReqBitFields() error {
 	c.conn.SetDeadline(time.Now().Add(5 * time.Second))
 	defer c.conn.SetDeadline(time.Time{})
 	msg, err := formats.ParseMessage(c.conn)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if msg.ID != formats.BitField {
-		return nil, fmt.Errorf("Expected bitfield, got: %s", *msg)
+		return fmt.Errorf("Expected bitfield, got: %s", *msg)
 	}
 	b := formats.Bitfield(msg.Payload)
-	return b, nil
+	c.b = b
+	return nil
 }
-func (c *Client) reqPiece(q Queue, p PiecesState) {
+
+func (c *PeerConn) reqPiece(q Queue, p PiecesState) {
 	if q.chocked {
 		return
 	}

@@ -74,3 +74,11 @@ func ParseHandShake(r io.Reader) (*HandShake, error) {
 	h.peerId = *((*[20]byte)(all[28+pstrLen : 48+pstrLen]))
 	return h, nil
 }
+
+func verifyhandShake(req, resp *HandShake) bool {
+	var ok bool
+	if bytes.Compare(req.infoHash[:], resp.infoHash[:]) == 0 {
+		ok = true
+	}
+	return ok
+}
