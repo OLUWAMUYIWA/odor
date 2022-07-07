@@ -42,7 +42,6 @@ func NewUDPTClient(infoHash formats.Sha1, peerId [20]byte, announce string) *UDP
 // https://ops.tips/blog/udp-client-and-server-in-go/
 
 func (client *UDPTClient) Connect(ctx context.Context) (uint64, error) {
-	rand.Seed(time.Now().Unix())
 	txId := rand.Int31()
 
 	raddr, err := net.ResolveUDPAddr("udp4", client.announce)

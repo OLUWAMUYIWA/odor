@@ -9,7 +9,7 @@
 - The filename ends with `.torrent` extension.
 
 ### Contents of the MetaInfo
-
+The file contains teo major items, and some optional ones
 - **info**: a dictionary. it describes the files in the torrent. Two types: single file-types and directory-type
 - **announce**: a string representing the address url of the tracker
 - creation-date
@@ -39,9 +39,11 @@ Now to the parts of the `info` dictionary that depend on wheter its a single-fil
 
 
 
-## Tracker HTTP/HTTPS Protocol
+## UDP Tracker Protocol [ref](https://github.com/naim94a/udpt/wiki/The-BitTorrent-UDP-tracker-protocol)
 
 The `tracker` service responds to `get` requests. `req` sent to the tracker includes values that help the tracker keep track of statistics about the torrent. the `resp` from a tracker service is a `peer` list. 
+
+The Tracker requires the following info be provided. 
 Tracker req details: 
 	- **base_url**: announce url in metainfo file
 	- then, a `?` indicating the beginnig of query parameters

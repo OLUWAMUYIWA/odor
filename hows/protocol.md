@@ -1,4 +1,12 @@
-[ref](http://web.cs.ucla.edu/classes/cs217/05BitTorrent.pdf)
+[ref1](http://web.cs.ucla.edu/classes/cs217/05BitTorrent.pdf)
+[ref2](https://www.morehawes.co.uk/old-guides/the-bittorrent-protocol)
+[ref3: utp](http://bittorrent.org/beps/bep_0029.html)
+
+## Elements of The Protocol
+
+1. MetaInfo File: This is about all the information a user/client needs to initiate a torrent download. A Torrent Publisher must create one for their Torrent and mae it available to the public. I contains: the `announce` url which specifies the tracker that you communicate with to supply you a list of peers who have the torrents file. The `Tracker` is the senior member of a pool of participants in a BitTorrent download. It hosts a the list of peers and gives it to whoever asks. It keeps this list updated regularly. 
+2. Tracker: Its role is peer discovery. Peers wouldnt be able to find themselves if not for a dedicated machine listening for clients to request it for a list of peers having a file(or portions of it). The Tracker is the manager. It also stores other statistics about the torrent. You can connect to it via TCP/UDP. One tracker can manae more than one torrent. 
+3. Piece: Files are broken into verifiable pieces. Each piece has an hash specified in the `MetaInfo` file to be used to verify it its integrity.  All pieces have th same size, and that size is specified in the `MetaInfo` file; The last Piece would be the only exception, its has no fixed length. Generally, creators of Torrents want their piece size low enough to to avoid inefficiency. Most common piece sizes are 256kb, 512kb, 1mb.  
 
 P2P is a network architecture where participators (called pers) are equal in ability, and any member(peer) can initiate communication with another. A p2p netwwork may be pure or hybrid. The `pure` case is obvious, its an egalitarian place. The hybrid case is a little different, there exists a member whose duties are central to the network, but the characteristic role of a server in a client-server architecture is not replicated here. The central entity is needed to provide only some(one?) the services in the networ. BitTorrent, for instance is a hybrid p2p arch because it needs the tracker. But the tracker does not do anything beyond peer discovery.
 
@@ -31,7 +39,7 @@ Its a static file. its `bencoded`. it must contain the address of the tracker, t
 A peer refers to a participating node in a torent. A peer could be a leecher or a seeder. WRT you, Peers are other users participating in a torrent, and have the partial file, or the complete file. When they have complete file, they are known as `seed`s. The fact that BitTorrent nodes consists of peers makes it a p2p protocol. The `Tracker` is the node that trumps them all, it is the central node, and not a peer
 
 #### Tracker
-Trackers exist for peer discovery, morally. Trackers dont have the file to be downloaded. It keeps a list of peers that are currently downloading a file. This list of peers are constantly being updated. The list of `peer`s contained in the tracker is called a `swarm`. Tracker and clients communicate using either utp or http. The tracker is constantly replying to connecting peers with a list of peers who have the requested pieces.
+Trackers exist for peer discovery, morally. Trackers dont have the file to be downloaded. It keeps a list of peers that are currently downloading a file. This list of peers are constantly being updated. The list of `peer`s contained in the tracker is called a `swarm`. Tracker and clients communicate using either utp or http. The tracker is constantly replying to connecting peers with a list of peers who have the requested pieces. The role of the tracker ends after peerrs have discovered each other. 
 
 #### Leecher
 A leecher is a peer who does not yet have the complete set of the file. the leecher communicates with the `tracker`, requesting for the list of peers. It downloads `piece`s from the peers, and simultaneously makes available its already downloaded pieces to other leechers. Each piece is verified against its `Sha1` hash which is already in the `MetaInfo` file. A leecher does not need to become a seeder before it starts making its pieces availavle for download.
