@@ -75,8 +75,29 @@ func (e Ext) len() int {
 	return len(e.data)
 }
 
+// etype returns the extension type of the extension
 func (e Ext) etype () ExtType {
 	ty, _ := extType(uint8(e.ty))
 	return ty
 }
+
+func (e Ext) Iter() BitStream {
+	return NewBitStream(e.data)
+}
+
+
+type PacketHeader struct {
+	type_ver uint8 // type: u4, ver: u4
+    extension uint8
+    connection_id uint16
+    
+    // Both timestamps are in microseconds
+    timestamp uint32
+    timestamp_difference uint32
+
+    wnd_size uint32
+    seq_nr uint16
+    ack_nr uint16
+}
+
 
