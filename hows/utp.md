@@ -1,0 +1,1 @@
+To save time, after reading official documents enunciating the algorithm, I basically just ported the essential parts of a rust implementation of the protocol into go to get this done.

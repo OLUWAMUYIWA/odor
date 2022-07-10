@@ -52,3 +52,9 @@ Tracker req details:
 	- **port**: client port. bittorrent reserved: 6881-6889
 	- **uploaded**: total amount uploaded since `started` event was sent to the tracker. in base-10 ascii.   
 	- **downloaded**: total amount downloaded since `started` event was sent to the tracker. in base-10 ascii.  
+
+
+
+## Piece Download
+
+- A Piece is not reported as downloaded except its hash has been verified.
