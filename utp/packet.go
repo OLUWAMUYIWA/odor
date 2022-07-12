@@ -3,6 +3,7 @@ package utp
 import (
 	"encoding/binary"
 	"fmt"
+	"strings"
 )
 
 const HeaderSize uint = 20
@@ -94,6 +95,7 @@ type PacketHeader struct {
 	ackNr   uint16
 }
 
+// PckHdrFromByteSlice is used when we want to parse the header of a packet from the network
 func PckHdrFromByteSlice(b []byte) (*PacketHeader, error) {
 	if len(b) < int(HeaderSize) {
 		return nil, fmt.Errorf("Packet length: %d is less than %d", len(b), HeaderSize)
@@ -119,19 +121,6 @@ func PckHdrFromByteSlice(b []byte) (*PacketHeader, error) {
 		seqNr:         binary.BigEndian.Uint16(b[16:18]),
 		ackNr:         binary.BigEndian.Uint16(b[18:20]),
 	}, nil
-}
-
-func PckHdrFromByteSliceUnchecked(b []byte) *PacketHeader {
-	return &PacketHeader{
-		typeVer:       b[0],
-		extension:     b[1],
-		connectionId:  binary.BigEndian.Uint16(b[2:4]),
-		timestamp:     binary.BigEndian.Uint32(b[4:8]),
-		timestampDiff: binary.BigEndian.Uint32(b[8:12]),
-		wndSize:       binary.BigEndian.Uint32(b[12:16]),
-		seqNr:         binary.BigEndian.Uint16(b[16:18]),
-		ackNr:         binary.BigEndian.Uint16(b[18:20]),
-	}
 }
 
 func NewPacketHeader() *PacketHeader {
@@ -192,6 +181,19 @@ func NewPacketWithPayload(b []byte) Packet {
 	return p
 }
 
+func PckHdrFromByteSliceUnchecked(b []byte) *PacketHeader {
+	return &PacketHeader{
+		typeVer:       b[0],
+		extension:     b[1],
+		connectionId:  binary.BigEndian.Uint16(b[2:4]),
+		timestamp:     binary.BigEndian.Uint32(b[4:8]),
+		timestampDiff: binary.BigEndian.Uint32(b[8:12]),
+		wndSize:       binary.BigEndian.Uint32(b[12:16]),
+		seqNr:         binary.BigEndian.Uint16(b[16:18]),
+		ackNr:         binary.BigEndian.Uint16(b[18:20]),
+	}
+}
+
 func (p *Packet) setType(t PacketType) {
 	hdr := PckHdrFromByteSliceUnchecked(p.data[0:20])
 	hdr.setType(t)
@@ -218,9 +220,169 @@ func (p Packet) getExts() ExtIter {
 	return ExtIter{}
 }
 
-type ExtIter struct {
+// payload extracts the payload from the packet
+func (p Packet) payload() []byte {
+	index := int(HeaderSize)
+	ext, _ := extType(p.data[1])
+
+	for index < len(p.data) && ext != None {
+		len := p.data[index+1]
+		ext, _ = extType(p.data[index])
+		index += int(len) + 2
+	}
+	return p.data[index:]
 }
 
-func (p Packet) payload() []byte {
+func (p Packet) timestamp() TimeStamp {
+	hdr := PckHdrFromByteSliceUnchecked(p.data[0:20])
+	return TimeStamp{hdr.timestamp}
+}
+
+// comeback
+func (p Packet) setTimestamp(t TimeStamp) {
+	hdr := PckHdrFromByteSliceUnchecked(p.data[0:20])
+	ts := t.t
+	b := []byte{byte(ts >> 24), byte(ts >> 16), byte(ts >> 8), byte(ts >> 0)}
+	hdr.timestamp = binary.BigEndian.Uint32(b)
+}
+
+func (p Packet) timestampDiff() delay {
+	hdr := PckHdrFromByteSliceUnchecked(p.data[0:20])
+	return delay{
+		d: int64(hdr.timestampDiff),
+	}
+}
+
+func (p *Packet) setTimespanDff(delay delay) {
+	hdr := PckHdrFromByteSliceUnchecked(p.data[0:20])
+	d := delay.d
+	b := []byte{byte(d >> 24), byte(d >> 16), byte(d >> 8), byte(d >> 0)}
+	hdr.timestamp = binary.BigEndian.Uint32(b)
+}
+
+func (p Packet) getConnId() uint16 {
+	hdr := PckHdrFromByteSliceUnchecked(p.data[0:20])
+	return hdr.connectionId
+}
+
+func (p Packet) getSeqNr() uint16 {
+	hdr := PckHdrFromByteSliceUnchecked(p.data[0:20])
+	return hdr.seqNr
+}
+
+func (p Packet) getAckNr() uint16 {
+	hdr := PckHdrFromByteSliceUnchecked(p.data[0:20])
+	return hdr.ackNr
+}
+
+func (p Packet) getWndSize() uint32 {
+	hdr := PckHdrFromByteSliceUnchecked(p.data[0:20])
+	return hdr.wndSize
+}
+
+func (p *Packet) setSack(bv []byte) error {
+	// The length of the SACK extension is expressed in bytes,
+	// it ought be a multiple of 4 and at least 4.
+	if len(bv) < 4 {
+		return fmt.Errorf("length ought to be at least 4")
+	}
+
+	if len(bv)%4 != 0 {
+		return fmt.Errorf("lenghth ought be divisible by 4")
+	}
+
+	index := int(HeaderSize)
+	ext, _ := extType(p.data[1])
+
+	if ext == None {
+		p.data[1] = byte(SelectiveAck)
+	} else {
+		for index < len(p.data) && ext != None {
+			len := p.data[index+1]
+			ext, _ = extType(p.data[index])
+			if ext == None {
+				p.data[index] = byte(SelectiveAck)
+			}
+			index += int(len) + 2
+		}
+	}
+	temp := p.data[index+1:]
+	p.data = append(p.data[0:index], byte(None))
+	p.data = append(p.data, temp...)
+
+	return nil
+}
+
+func (p Packet) len() int {
+	return len(p.data)
+}
+
+func (p Packet) String() string {
+	var s strings.Builder
+	s.WriteString(fmt.Sprintf("type: %d\n", p.getType()))
+	s.WriteString(
+		fmt.Sprintf("version: %d\nextension: %d\nconnectionId: %d\ntimestamp: %d\ntimestampDiff: %d\nwndSize: %d\nseqNr: %d\nackNr: %d\n",
+			p.getVer(), p.getExtType(), p.getConnId(), p.timestamp().t, p.timestampDiff().d, p.getWndSize(), p.getSeqNr(), p.getAckNr()))
+	return s.String()
+}
+
+type ExtIter struct {
+	b       []byte
+	nextExt ExtType
+	i       int // index
+}
+
+func (e *ExtIter) next() (Ext, bool) { // the second return value indicates that it is done
+	if e.nextExt == None {
+		return Ext{}, false // done
+	} else if e.i < len(e.b) {
+		len := int(e.b[e.i+1])
+		extStart := e.i + 2
+		extEnd := extStart + len
+
+		ext := Ext{
+			ty:   e.nextExt,
+			data: e.b[extStart:extEnd],
+		}
+		e.nextExt = ExtType(e.b[e.i])
+		e.i += 2
+		return ext, true
+	} else {
+		return Ext{}, false
+	}
+}
+
+func chectExts(b []byte) error {
+	if len(b) < int(HeaderSize) {
+		return fmt.Errorf("Invalid Packet Length")
+	}
+
+	i := int(HeaderSize)
+	extType, _ := extType(b[1])
+
+	if len(b) == int(HeaderSize) && extType != None {
+		return fmt.Errorf("Invali Extension Length")
+	}
+
+	for i < len(b) && extType != None {
+		if len(b) < i+2 {
+			return fmt.Errorf("Invalid Packet Length")
+		}
+		l := int(b[i+1])
+
+		extStart := i + 2
+		extEnd := extStart + l
+
+		if l == 0 || l%4 != 0 || extEnd > len(b) {
+			return fmt.Errorf("Invalid extension Length")
+		}
+
+		i += l + 2
+	}
+
+	if extType != None {
+		return fmt.Errorf("Invalid Packet Length")
+	}
+
 	return nil
 }
