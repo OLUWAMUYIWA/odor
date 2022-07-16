@@ -45,14 +45,6 @@ func (b *BitStream) Next() (bool, error) {
 	return false, fmt.Errorf("Ended, anything beyond this is out of range")
 }
 
-type TimeStamp struct {
-	t uint32
-}
-
-type delay struct {
-	d int64
-}
-
 func randSeqID() (uint16, uint16) {
 	rand.Seed(time.Now().Unix())
 	id := uint16(rand.Int31()) // i just have to do this. math/rand cannot cannot generate 16bit integers
@@ -61,4 +53,13 @@ func randSeqID() (uint16, uint16) {
 	} else {
 		return id, id + 1
 	}
+}
+
+// converts a big-endian integer to little-endian, or from little-endian to big-endian
+func invEndUint32(i uint32) uint32 {
+	return (i >> 24) | ((i >> 8) & 0x0000ff00) | ((i << 8) & 0x00ff0000) | ((i << 24) & 0xff000000)
+}
+
+func invEndUint16(i uint16) uint16 {
+	return (i >> 8) | ((i << 8) & 0xff00)
 }

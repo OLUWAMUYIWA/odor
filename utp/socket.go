@@ -1,6 +1,13 @@
 package utp
 
-import "net"
+import (
+	"fmt"
+	"net"
+	"regexp"
+	"strconv"
+)
+
+var IpV4Regex = regexp.MustCompile(`^[\d{2}]\.[\d{2}]\.[\d{2}]\.[\d{2}]:[\d{2}$`)
 
 // For simplicity's sake, let us assume no packet will ever exceed the Ethernet maximum transfer unit of 1500 bytes.
 const BUF_SIZE uint = 1500
@@ -19,9 +26,6 @@ const MAX_RETRANSMISSION_RETRIES uint32 = 5    // maximum retransmission retries
 const WINDOW_SIZE uint32 = 1024 * 1024         // local receive window size
 // Maximum time (in microseconds) to wait for incoming packets when the send window is full
 const PRE_SEND_TIMEOUT uint32 = 500_000
-
-// Maximum age of base delay sample (60 seconds)
-type Delay int64
 
 const MAX_BASE_DELAY_AGE Delay = 60_000_000
 
@@ -44,6 +48,10 @@ type DelayDifferenceSample struct {
 type SocketAddr struct {
 	ipAddr net.IPAddr
 	port   int
+}
+
+func (s SocketAddr) String() string {
+	return net.JoinHostPort(s.ipAddr.String(), strconv.Itoa(s.port))
 }
 
 type UtpSocket struct {
@@ -142,7 +150,7 @@ func NewSocketFromRaw(addr net.UDPAddr, remote SocketAddr) UtpSocket {
 		unsentQueue:              []Packet{},
 		dupAckCount:              0,
 		lastAcked:                0,
-		lastAckedTimestamp:       TimeStamp{},
+		lastAckedTimestamp:       TimeStamp(0),
 		lastDropped:              0,
 		rtt:                      0,
 		rttVariance:              0,
@@ -152,9 +160,59 @@ func NewSocketFromRaw(addr net.UDPAddr, remote SocketAddr) UtpSocket {
 		currentDelays:            []DelayDifferenceSample{},
 		baseDelays:               []Delay{},
 		theirDelay:               Delay(0),
-		lastRollover:             TimeStamp{},
+		lastRollover:             TimeStamp(0),
 		congestionTimeout:        INITIAL_CONGESTION_TIMEOUT,
 		cwnd:                     INIT_CWND * MSS,
 		maxRetransmissionRetries: MAX_RETRANSMISSION_RETRIES,
 	}
+}
+
+func (u UtpSocket) localAddr() string {
+	return u.socket.String()
+}
+
+func (u UtpSocket) peerAddr() (string, error) {
+	if u.state == Connected || u.state == FinSent {
+		return u.connectedTo.String(), nil
+	}
+
+	return "", fmt.Errorf("Not Connected")
+}
+
+func connect(addr SocketAddr) (*UtpSocket, error) {
+	raddr, err := net.ResolveUDPAddr("udp", addr.String())
+
+	if err != nil {
+		return nil, err
+	}
+	var lAddr string
+	if IpV4Regex.MatchString(raddr.String()) {
+		lAddr = "0.0.0.0:0"
+	} else {
+		lAddr = "[::]:0"
+	}
+	laddr, err := net.ResolveUDPAddr("udp", lAddr)
+	if err != nil {
+		return nil, err
+	}
+
+	utpSock := NewSocketFromRaw(*laddr, SocketAddr{ipAddr: net.IPAddr{IP: raddr.IP, Zone: raddr.Zone}, port: raddr.Port})
+
+	p := NewPacket()
+	p.setType(Syn)
+	p.setConnID(utpSock.rcvrConnID)
+	p.setSeqNr(utpSock.seqNr)
+
+	// l := 0
+	// buf := make([]byte, BUF_SIZE)
+
+	// synTimeout := utpSock.congestionTimeout
+
+	// for i := 0; i < int(MAX_SYN_RETRIES); i++ {
+
+	// }
+
+	// udpConn, err := net.DialUDP("udp4", laddr, raddr)
+
+	return nil, nil
 }

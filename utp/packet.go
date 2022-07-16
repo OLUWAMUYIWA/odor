@@ -20,19 +20,10 @@ const (
 )
 
 func packetType(n uint8) (PacketType, error) {
-	if n == uint8(Data) {
-		return Data, nil
-	} else if n == uint8(Fin) {
-		return Fin, nil
-	} else if n == uint8(State) {
-		return State, nil
-	} else if n == uint8(Reset) {
-		return Reset, nil
-	} else if n == uint8(Syn) {
-		return Syn, nil
-	} else {
+	if n < 0 || n > 5 {
 		return Invalid, fmt.Errorf("Invalid package type: %d", n)
 	}
+	return PacketType(n), nil
 }
 
 func packetByte(p PacketType) uint8 {
@@ -73,8 +64,7 @@ func (e Ext) len() int {
 
 // etype returns the extension type of the extension
 func (e Ext) etype() ExtType {
-	ty, _ := extType(uint8(e.ty))
-	return ty
+	return e.ty
 }
 
 func (e Ext) Iter() BitStream {
@@ -82,11 +72,11 @@ func (e Ext) Iter() BitStream {
 }
 
 type PacketHeader struct {
-	typeVer      uint8 // type: u4, ver: u4
+	// type: first nibble, ver: second nibble
+	typeVer      uint8
 	extension    uint8
 	connectionId uint16
 
-	// Both timestamps are in microseconds
 	timestamp     uint32
 	timestampDiff uint32
 
@@ -106,8 +96,7 @@ func PckHdrFromByteSlice(b []byte) (*PacketHeader, error) {
 		return nil, fmt.Errorf("Unsupported version")
 	}
 	// packet type is specified by the higher nibble
-	_, err := packetType(b[0] >> 4)
-	if err != nil {
+	if _, err := packetType(b[0] >> 4); err != nil {
 		return nil, fmt.Errorf("Ivalid packet type")
 	}
 
@@ -121,6 +110,19 @@ func PckHdrFromByteSlice(b []byte) (*PacketHeader, error) {
 		seqNr:         binary.BigEndian.Uint16(b[16:18]),
 		ackNr:         binary.BigEndian.Uint16(b[18:20]),
 	}, nil
+}
+
+func PckHdrFromByteSliceUnchecked(b []byte) *PacketHeader {
+	return &PacketHeader{
+		typeVer:       b[0],
+		extension:     b[1],
+		connectionId:  binary.BigEndian.Uint16(b[2:4]),
+		timestamp:     binary.BigEndian.Uint32(b[4:8]),
+		timestampDiff: binary.BigEndian.Uint32(b[8:12]),
+		wndSize:       binary.BigEndian.Uint32(b[12:16]),
+		seqNr:         binary.BigEndian.Uint16(b[16:18]),
+		ackNr:         binary.BigEndian.Uint16(b[18:20]),
+	}
 }
 
 func NewPacketHeader() *PacketHeader {
@@ -162,13 +164,28 @@ type Packet struct {
 	data []byte
 }
 
+func (p Packet) inner() []byte {
+	return p.data
+}
+
 func NewPacket() Packet {
 	return Packet{
 		data: PacketHeader{}.asBytes(),
 	}
 }
 
-// NewPacketWithPayloadcreates a new data packet, with appropriate header and provided payload
+// PacketFromBytes checks if the header and the extensions are valid. It then creates a packet from the bytes
+func PacketFromBytes(b []byte) (*Packet, error) {
+	if _, err := PckHdrFromByteSlice(b); err != nil {
+		return nil, err
+	}
+	if err := chectExts(b); err != nil {
+		return nil, err
+	}
+	return &Packet{data: b}, nil
+}
+
+// NewPacketWithPayload creates a new data packet, with appropriate header and provided payload
 func NewPacketWithPayload(b []byte) Packet {
 	p := Packet{}
 	pLen := int(HeaderSize) + len(b)
@@ -179,19 +196,6 @@ func NewPacketWithPayload(b []byte) Packet {
 	copy(data[20:], b)
 	p.data = data
 	return p
-}
-
-func PckHdrFromByteSliceUnchecked(b []byte) *PacketHeader {
-	return &PacketHeader{
-		typeVer:       b[0],
-		extension:     b[1],
-		connectionId:  binary.BigEndian.Uint16(b[2:4]),
-		timestamp:     binary.BigEndian.Uint32(b[4:8]),
-		timestampDiff: binary.BigEndian.Uint32(b[8:12]),
-		wndSize:       binary.BigEndian.Uint32(b[12:16]),
-		seqNr:         binary.BigEndian.Uint16(b[16:18]),
-		ackNr:         binary.BigEndian.Uint16(b[18:20]),
-	}
 }
 
 func (p *Packet) setType(t PacketType) {
@@ -215,16 +219,15 @@ func (p Packet) getExtType() ExtType {
 	return hdr.getExtType()
 }
 
-// comeback
 func (p Packet) getExts() ExtIter {
-	return ExtIter{}
+	return NewExtIter(p)
 }
 
 // payload extracts the payload from the packet
 func (p Packet) payload() []byte {
 	index := int(HeaderSize)
 	ext, _ := extType(p.data[1])
-
+	// skip all extensions
 	for index < len(p.data) && ext != None {
 		len := p.data[index+1]
 		ext, _ = extType(p.data[index])
@@ -234,52 +237,76 @@ func (p Packet) payload() []byte {
 }
 
 func (p Packet) timestamp() TimeStamp {
+	// we used the unchecked version of this method because we expect that a valid `Packet`  contains a valid `PacketHeader`
 	hdr := PckHdrFromByteSliceUnchecked(p.data[0:20])
-	return TimeStamp{hdr.timestamp}
+	// this computer is little-endian, therefore we have to change the endianness
+	return TimeStamp(invEndUint32(hdr.timestamp))
 }
 
-// comeback
-func (p Packet) setTimestamp(t TimeStamp) {
+func (p *Packet) setTimestamp(t TimeStamp) {
 	hdr := PckHdrFromByteSliceUnchecked(p.data[0:20])
-	ts := t.t
-	b := []byte{byte(ts >> 24), byte(ts >> 16), byte(ts >> 8), byte(ts >> 0)}
-	hdr.timestamp = binary.BigEndian.Uint32(b)
+	// invert the endianness before storing
+	ts := invEndUint32(uint32(t))
+	hdr.timestamp = ts
+	copy(p.data[0:20], hdr.asBytes())
 }
 
-func (p Packet) timestampDiff() delay {
+func (p Packet) timestampDiff() Delay {
 	hdr := PckHdrFromByteSliceUnchecked(p.data[0:20])
-	return delay{
-		d: int64(hdr.timestampDiff),
-	}
+	return Delay(invEndUint32(hdr.timestampDiff))
 }
 
-func (p *Packet) setTimespanDff(delay delay) {
+func (p *Packet) setTimespanDiff(delay Delay) {
 	hdr := PckHdrFromByteSliceUnchecked(p.data[0:20])
-	d := delay.d
-	b := []byte{byte(d >> 24), byte(d >> 16), byte(d >> 8), byte(d >> 0)}
-	hdr.timestamp = binary.BigEndian.Uint32(b)
+	hdr.timestamp = invEndUint32(uint32(delay))
+	copy(p.data[:20], hdr.asBytes())
 }
 
 func (p Packet) getConnId() uint16 {
 	hdr := PckHdrFromByteSliceUnchecked(p.data[0:20])
-	return hdr.connectionId
+	return invEndUint16(hdr.connectionId)
 }
 
 func (p Packet) getSeqNr() uint16 {
 	hdr := PckHdrFromByteSliceUnchecked(p.data[0:20])
-	return hdr.seqNr
+	return invEndUint16(hdr.seqNr)
 }
 
 func (p Packet) getAckNr() uint16 {
 	hdr := PckHdrFromByteSliceUnchecked(p.data[0:20])
-	return hdr.ackNr
+	return invEndUint16(hdr.ackNr)
 }
 
 func (p Packet) getWndSize() uint32 {
 	hdr := PckHdrFromByteSliceUnchecked(p.data[0:20])
-	return hdr.wndSize
+	return invEndUint32(hdr.wndSize)
 }
 
+func (p *Packet) setSeqNr(seqNr uint16) {
+	hdr := PckHdrFromByteSliceUnchecked(p.data[0:20])
+	hdr.seqNr = invEndUint16(seqNr)
+	copy(p.data[:20], hdr.asBytes())
+}
+
+func (p *Packet) setAckNr(ackNr uint16) {
+	hdr := PckHdrFromByteSliceUnchecked(p.data[0:20])
+	hdr.ackNr = invEndUint16(ackNr)
+	copy(p.data[:20], hdr.asBytes())
+}
+
+func (p *Packet) setConnID(connID uint16) {
+	hdr := PckHdrFromByteSliceUnchecked(p.data[0:20])
+	hdr.connectionId = invEndUint16(connID)
+	copy(p.data[:20], hdr.asBytes())
+}
+
+func (p *Packet) setWndSize(wndSize uint32) {
+	hdr := PckHdrFromByteSliceUnchecked(p.data[0:20])
+	hdr.wndSize = invEndUint32(wndSize)
+	copy(p.data[:20], hdr.asBytes())
+}
+
+// setSack sets Selective ACK field in packet header and adds appropriate data.
 func (p *Packet) setSack(bv []byte) error {
 	// The length of the SACK extension is expressed in bytes,
 	// it ought be a multiple of 4 and at least 4.
@@ -291,9 +318,11 @@ func (p *Packet) setSack(bv []byte) error {
 		return fmt.Errorf("lenghth ought be divisible by 4")
 	}
 
+	// begin immediately after the header ends
 	index := int(HeaderSize)
 	ext, _ := extType(p.data[1])
 
+	// wherever extenions end (become none), set the extension to be selective ack
 	if ext == None {
 		p.data[1] = byte(SelectiveAck)
 	} else {
@@ -306,9 +335,11 @@ func (p *Packet) setSack(bv []byte) error {
 			index += int(len) + 2
 		}
 	}
-	temp := p.data[index+1:]
-	p.data = append(p.data[0:index], byte(None))
-	p.data = append(p.data, temp...)
+	left, right := p.data[:index], p.data[index:]
+	left = append(left, byte(None))
+	left = append(left, uint8(len(bv)))
+	left = append(left, bv...)
+	p.data = append(left, right...)
 
 	return nil
 }
@@ -322,7 +353,7 @@ func (p Packet) String() string {
 	s.WriteString(fmt.Sprintf("type: %d\n", p.getType()))
 	s.WriteString(
 		fmt.Sprintf("version: %d\nextension: %d\nconnectionId: %d\ntimestamp: %d\ntimestampDiff: %d\nwndSize: %d\nseqNr: %d\nackNr: %d\n",
-			p.getVer(), p.getExtType(), p.getConnId(), p.timestamp().t, p.timestampDiff().d, p.getWndSize(), p.getSeqNr(), p.getAckNr()))
+			p.getVer(), p.getExtType(), p.getConnId(), p.timestamp(), p.timestampDiff(), p.getWndSize(), p.getSeqNr(), p.getAckNr()))
 	return s.String()
 }
 
@@ -332,6 +363,15 @@ type ExtIter struct {
 	i       int // index
 }
 
+// comeback
+func NewExtIter(p Packet) ExtIter {
+	ex, _ := extType(p.data[1])
+	return ExtIter{
+		b:       p.data,
+		nextExt: ex,
+		i:       int(HeaderSize),
+	}
+}
 func (e *ExtIter) next() (Ext, bool) { // the second return value indicates that it is done
 	if e.nextExt == None {
 		return Ext{}, false // done
