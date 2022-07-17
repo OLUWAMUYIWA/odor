@@ -58,15 +58,11 @@ func (s SocketAddr) String() string {
 }
 
 type UtpSocket struct {
-
-	// the udp conn
-	conn *net.UDPConn
-
 	/// The wrapped UDP socket
 	socket *net.UDPAddr
 
 	/// Remote peer
-	connectedTo *net.UDPAddr
+	connectedTo *SocketAddr
 
 	/// Sender connection identifier
 	senderConnID uint16
@@ -141,12 +137,11 @@ type UtpSocket struct {
 	maxRetransmissionRetries uint32
 }
 
-func NewSocketFromRaw(addr *net.UDPAddr, remote *net.UDPAddr, conn *net.UDPConn) UtpSocket {
+func NewSocketFromRaw(addr net.UDPAddr, remote SocketAddr) UtpSocket {
 	sendID, rcvID := randSeqID()
 
 	return UtpSocket{
-		conn:                     conn,
-		socket:                   addr,
+		socket:                   &addr,
 		connectedTo:              remote,
 		senderConnID:             sendID,
 		rcvrConnID:               rcvID,
@@ -203,10 +198,8 @@ func connect(addr SocketAddr) (*UtpSocket, error) {
 	if err != nil {
 		return nil, err
 	}
-	udpConn, err := net.DialUDP("udp4", laddr, raddr)
 
-	// utpSock := NewSocketFromRaw(*laddr, SocketAddr{ipAddr: net.IPAddr{IP: raddr.IP, Zone: raddr.Zone}, port: raddr.Port})
-	utpSock := NewSocketFromRaw(laddr, raddr, udpConn)
+	utpSock := NewSocketFromRaw(*laddr, SocketAddr{ipAddr: net.IPAddr{IP: raddr.IP, Zone: raddr.Zone}, port: raddr.Port})
 
 	p := NewPacket()
 	p.setType(Syn)
@@ -215,6 +208,7 @@ func connect(addr SocketAddr) (*UtpSocket, error) {
 
 	l := 0
 	buf := make([]byte, BUF_SIZE)
+	udpConn, err := net.DialUDP("udp4", laddr, raddr)
 
 	synTimeout := utpSock.congestionTimeout
 
@@ -233,135 +227,16 @@ func connect(addr SocketAddr) (*UtpSocket, error) {
 
 		if n, addr, err := udpConn.ReadFromUDP(buf); err == nil {
 			utpSock.connectedTo = addr
-			l = n
-			break
 		} else if errors.Is(err, os.ErrDeadlineExceeded) { // comeback to check for would block
 			synTimeout += 2
 			continue
 		} else {
 			return nil, err
 		}
+
+		// send packet
+
 	}
 
-	// comeback : reset read deadline: do i need to do this?
-	udpConn.SetReadDeadline(time.Time{})
-
-	address := utpSock.connectedTo
-	packet, err := PacketFromBytes(buf[:l])
-	if err != nil {
-		return nil, err
-	}
-	if _, err := utpSock.HandlePacket(packet, address); err != nil {
-		return nil, err
-	}
-
-	return &utpSock, nil
-}
-
-func (u *UtpSocket) Close() error {
-	if u.state == Closed || u.state == New || u.state == SynSent {
-		return nil
-	}
-	if err := u.Flush(); err != nil {
-		return err
-	}
-
-	p := NewPacket()
-	p.setConnID(u.senderConnID)
-	p.setSeqNr(u.seqNr)
-	p.setAckNr(u.ackNr)
-	p.setTimestamp(nowMicroSecs())
-	p.setType(Fin)
-
-	if _, err := u.conn.Write(p.asBytes()); err != nil {
-		return err
-	}
-
-	u.state = FinSent
-
-	b := make([]byte, BUF_SIZE)
-	for u.state != Closed {
-		if _, _, err := u.Recv(b); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (u *UtpSocket) RecvFrom(b []byte) (int, *net.UDPAddr, error) {
-	read := u.FlushIncomingBuffer(b)
-	if read > 0 {
-		return read, u.connectedTo, nil
-	}
-
-	if u.state == ResetReceived {
-		return 0, nil, fmt.Errorf("Connection reset")
-	}
-
-	for {
-		if u.state == Closed {
-			return 0, u.connectedTo, nil
-		}
-
-		n, addr, err := u.Recv(b)
-		if err != nil {
-			return 0, nil, err
-		}
-
-		if n == 0 {
-			continue
-		} else {
-			return n, addr, nil
-		}
-	}
-}
-
-// comeback
-func (u *UtpSocket) Recv(b []byte) (int, *net.UDPAddr, error) {
-	return 0, nil, nil
-}
-
-func (u *UtpSocket) FlushIncomingBuffer(b []byte) int {
-	if len(u.pendingData) != 0 {
-		nFlushed := copy(b, u.pendingData)
-		if nFlushed == len(u.pendingData) {
-			u.pendingData = []byte{}
-			u.advIncomingBuf()
-		} else {
-			u.pendingData = u.pendingData[nFlushed:]
-		}
-
-		return nFlushed
-	}
-
-	if len(u.incomingBuff) != 0 && ((u.ackNr == u.incomingBuff[0].getSeqNr()) || (u.ackNr+1 == u.incomingBuff[0].getSeqNr())) {
-		nFlushed := copy(b, u.incomingBuff[0].payload())
-		if nFlushed == len(u.incomingBuff[0].payload()) {
-			u.advIncomingBuf()
-		} else {
-			u.pendingData = u.incomingBuff[0].payload()[nFlushed:]
-		}
-
-		return nFlushed
-	}
-
-	return 0
-}
-
-func (u *UtpSocket) advIncomingBuf() {
-
-}
-
-func (c *UtpSocket) Flush() error {
-	buf := make([]byte, BUF_SIZE)
-	for len(c.sendWdw) != 0 {
-		if _, _, err := c.Recv(buf); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-func (u *UtpSocket) HandlePacket(p *Packet, addr *net.UDPAddr) (*Packet, error) {
 	return nil, nil
 }

@@ -197,6 +197,9 @@ func NewPacketWithPayload(b []byte) Packet {
 	p.data = data
 	return p
 }
+func (p Packet) asBytes() []byte {
+	return p.data
+}
 
 func (p *Packet) setType(t PacketType) {
 	hdr := PckHdrFromByteSliceUnchecked(p.data[0:20])
