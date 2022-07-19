@@ -560,18 +560,107 @@ func (u *UtpSocket) handlePacket(p *Packet, addr *net.UDPAddr) (*Packet, error) 
 	}
 }
 
-func (u *UtpSocket) prepareReply(p *Packet, t PacketType) *Packet {
-	return &Packet{}
+func (u *UtpSocket) prepareReply(original *Packet, t PacketType) *Packet {
+	ret := NewPacket()
+	ret.setType(t)
+	currT := nowMicroSecs()
+	otherT := original.timestamp()
+	timeDiff := absDiff(currT, otherT)
+	ret.setTimestamp(currT)
+	ret.setTimespanDiff(timeDiff)
+	ret.setConnID(u.senderConnID)
+	ret.setSeqNr(u.seqNr)
+	ret.setAckNr(u.ackNr)
+
+	return &ret
 }
 
 func (u *UtpSocket) handleDataPacket(p *Packet) *Packet {
-	return nil
+	var ty PacketType
+	if u.state == FinSent {
+		ty = Fin
+	} else {
+		ty = State
+	}
+
+	reply := u.prepareReply(p, ty)
+	if p.getSeqNr()-u.ackNr > 1 {
+		u.logger.Printf("current ack_nr %d is behind received packet seq_nr (%d)\n", u.ackNr, p.getSeqNr())
+		// Set SACK extension payload if the packet is not in order
+		sack := u.buildSelectiveAck()
+		if len(sack) != 0 {
+			reply.setSack(sack)
+		}
+	}
+
+	return reply
 }
 
 func (u *UtpSocket) handleStatePacket(p *Packet) {
+	if p.getAckNr() == u.lastAcked {
+		u.dupAckCount += 1
+	} else {
+		u.lastAcked = p.getAckNr()
+		u.lastAckedTimestamp = nowMicroSecs()
+		u.dupAckCount = 1
+	}
+
+	// Update congestion window size
+	for index, pkt := range u.sendWdw {
+		if p.getAckNr() == pkt.getSeqNr() {
+			// Calculate the sum of the size of every packet implicitly and explicitly acknowledged
+			// by the inbound packet (i.e., every packet whose sequence number precedes the inbound
+			// packet's acknowledgement number, plus the packet whose sequence number matches)
+
+			var bytesNewlyAcked int
+			for i := 0; i <= index; i++ {
+				bytesNewlyAcked += u.sendWdw[i].len()
+			}
+			// Update base and current delay
+			now := nowMicroSecs()
+			ourDelay := now - u.sendWdw[index].timestamp()
+			u.logger.Printf("our delay: %d\n", ourDelay)
+			u.updateBaseDelay(Delay(ourDelay), now)
+			u.updateCurrDelay(Delay(ourDelay), now)
+
+			offTarget := TARGET - float64(uint32(u.queuingDelay()))/TARGET
+			u.updateCongestionWdw(offTarget, uint32(bytesNewlyAcked))
+			rtt := uint32(ourDelay-TimeStamp(u.queuingDelay())) / 1000 // in milli
+			u.updateCongestionTimeOut(int32(rtt))
+			break
+		}
+	}
+
+	// var pktLossDetected bool
+	// if len(u.sendWdw) != 0 && u.dupAckCount == 3 {
+	// 	pktLossDetected = true
+	// }
+
+	// // Process extensions, if any
+	// extIter := p.getExts()
 
 }
 
 func (u *UtpSocket) buildSelectiveAck() []byte {
 	return nil
+}
+
+func (u *UtpSocket) updateBaseDelay(d Delay, t TimeStamp) {
+
+}
+
+func (u *UtpSocket) updateCurrDelay(d Delay, t TimeStamp) {
+
+}
+
+func (u *UtpSocket) updateCongestionWdw(offTarget float64, bytesNewlyAcked uint32) {
+
+}
+
+func (u *UtpSocket) updateCongestionTimeOut(currDelay int32) {
+
+}
+
+func (u *UtpSocket) queuingDelay() Delay {
+	return 0
 }
