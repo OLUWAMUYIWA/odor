@@ -63,3 +63,11 @@ func invEndUint32(i uint32) uint32 {
 func invEndUint16(i uint16) uint16 {
 	return (i >> 8) | ((i << 8) & 0xff00)
 }
+
+func absDiff(a, b TimeStamp) Delay {
+	if a > b {
+		return Delay(a - b)
+	} else {
+		return Delay(b - a)
+	}
+}

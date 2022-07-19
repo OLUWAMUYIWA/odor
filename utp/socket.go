@@ -3,6 +3,8 @@ package utp
 import (
 	"errors"
 	"fmt"
+	"log"
+	"math/rand"
 	"net"
 	"os"
 	"regexp"
@@ -58,6 +60,7 @@ func (s SocketAddr) String() string {
 }
 
 type UtpSocket struct {
+	logger *log.Logger
 
 	// the udp conn
 	conn *net.UDPConn
@@ -145,6 +148,7 @@ func NewSocketFromRaw(addr *net.UDPAddr, remote *net.UDPAddr, conn *net.UDPConn)
 	sendID, rcvID := randSeqID()
 
 	return UtpSocket{
+		logger:                   log.New(os.Stdout, "utp", log.LUTC),
 		conn:                     conn,
 		socket:                   addr,
 		connectedTo:              remote,
@@ -251,7 +255,7 @@ func connect(addr SocketAddr) (*UtpSocket, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := utpSock.HandlePacket(packet, address); err != nil {
+	if _, err := utpSock.handlePacket(packet, address); err != nil {
 		return nil, err
 	}
 
@@ -281,7 +285,7 @@ func (u *UtpSocket) Close() error {
 
 	b := make([]byte, BUF_SIZE)
 	for u.state != Closed {
-		if _, _, err := u.Recv(b); err != nil {
+		if _, _, err := u.recv(b); err != nil {
 			return err
 		}
 	}
@@ -304,7 +308,7 @@ func (u *UtpSocket) RecvFrom(b []byte) (int, *net.UDPAddr, error) {
 			return 0, u.connectedTo, nil
 		}
 
-		n, addr, err := u.Recv(b)
+		n, addr, err := u.recv(b)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -317,9 +321,123 @@ func (u *UtpSocket) RecvFrom(b []byte) (int, *net.UDPAddr, error) {
 	}
 }
 
-// comeback
-func (u *UtpSocket) Recv(b []byte) (int, *net.UDPAddr, error) {
-	return 0, nil, nil
+func (u *UtpSocket) recv(buf []byte) (int, *net.UDPAddr, error) {
+	b := make([]byte, BUF_SIZE+HeaderSize)
+	start := time.Now()
+	retries := 0
+	var nRead int
+	var rmtSource *net.UDPAddr
+	var err error
+	for {
+		if retries >= int(u.maxRetransmissionRetries) {
+			u.state = Closed
+			return 0, nil, os.ErrDeadlineExceeded
+		}
+
+		// try to set read deadline
+		if u.state != New {
+			u.conn.SetReadDeadline(time.Now().Add(time.Duration(time.Duration(u.congestionTimeout).Milliseconds()))) // convert to milisecond from microsecond
+		} else {
+			u.conn.SetReadDeadline(time.Time{})
+		}
+
+		nRead, rmtSource, err = u.conn.ReadFromUDP(b)
+		if err == nil {
+			break
+		}
+		if err != nil {
+			if errors.Is(err, os.ErrDeadlineExceeded) || os.IsTimeout(err) { // comeback: i suppose os.Timeout() hecks for E_WOULDBLOCK
+				if err := u.handleRecieveTimeout(); err != nil {
+					return 0, nil, err
+				}
+			} else {
+				return 0, nil, err
+			}
+		}
+
+		elapsed := time.Since(start).Milliseconds()
+		u.logger.Printf("Elapsed: %d milliseonds\n", elapsed)
+		retries += 1
+	}
+
+	packet, err := PacketFromBytes(b[:nRead])
+	if err != nil {
+		u.logger.Printf("Ignoring invalid packet: %s\n", err)
+		return 0, u.connectedTo, nil
+	}
+
+	u.logger.Printf("received: %s", *packet)
+	pkt, err := u.handlePacket(packet, rmtSource)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	if pkt != nil {
+		pkt.setWndSize(WINDOW_SIZE)
+		if _, err = u.conn.WriteToUDP(pkt.asBytes(), rmtSource); err != nil {
+			return 0, nil, err
+		}
+		u.logger.Printf("sent: %s", pkt)
+	}
+
+	read := u.FlushIncomingBuffer(buf)
+
+	return read, rmtSource, nil
+}
+
+func (u *UtpSocket) handleRecieveTimeout() error {
+	u.congestionTimeout += 2
+	u.cwnd = MSS
+	// There are three possible cases here:
+	//
+	// - If the socket is sending and waiting for acknowledgements (the send window is
+	//   not empty), resend the first unacknowledged packet;
+	//
+	// - If the socket is not sending and it hasn't sent a FIN yet, then it's waiting
+	//   for incoming packets: send a fast resend request;
+	//
+	// - If the socket sent a FIN previously, resend it.
+
+	if len(u.sendWdw) == 0 {
+		// The socket is trying to close, all sent packets were acknowledged, and it has
+		// already sent a FIN: resend it.
+		pkt := NewPacket()
+		pkt.setConnID(u.senderConnID)
+		pkt.setSeqNr(u.seqNr)
+		pkt.setAckNr(u.ackNr)
+		pkt.setTimestamp(nowMicroSecs())
+		pkt.setType(Fin)
+
+		if _, err := u.conn.WriteToUDP(pkt.asBytes(), u.connectedTo); err != nil {
+			return err
+		}
+		u.logger.Printf("resent FIN: %s\n", pkt)
+	} else if u.state == New {
+		// The socket is waiting for incoming packets but the remote peer is silent:
+		// send a fast resend request.
+		u.logger.Println("sending fast resend request")
+		u.sendFastRsndReq()
+	} else {
+		packet := u.sendWdw[0]
+		packet.setTimestamp(nowMicroSecs())
+		if _, err := u.conn.WriteToUDP(packet.asBytes(), u.connectedTo); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (u *UtpSocket) sendFastRsndReq() {
+	for i := 0; i < 3; i++ {
+		pkt := NewPacket()
+		pkt.setType(State)
+		pkt.setTimestamp(nowMicroSecs())
+		pkt.setTimespanDiff(u.theirDelay)
+		pkt.setConnID(u.senderConnID)
+		pkt.setAckNr(u.seqNr)
+		pkt.setAckNr(u.ackNr)
+		u.conn.WriteToUDP(pkt.asBytes(), u.connectedTo)
+	}
 }
 
 func (u *UtpSocket) FlushIncomingBuffer(b []byte) int {
@@ -356,12 +474,104 @@ func (u *UtpSocket) advIncomingBuf() {
 func (c *UtpSocket) Flush() error {
 	buf := make([]byte, BUF_SIZE)
 	for len(c.sendWdw) != 0 {
-		if _, _, err := c.Recv(buf); err != nil {
+		if _, _, err := c.recv(buf); err != nil {
 			return err
 		}
 	}
 	return nil
 }
-func (u *UtpSocket) HandlePacket(p *Packet, addr *net.UDPAddr) (*Packet, error) {
-	return nil, nil
+func (u *UtpSocket) handlePacket(p *Packet, addr *net.UDPAddr) (*Packet, error) {
+	// Acknowledge only if the packet strictly follows the previous one
+	if p.getSeqNr()-p.getAckNr() == 1 {
+		u.ackNr = p.getSeqNr()
+	}
+
+	// Reset connection if connection id doesn't match and this isn't a SYN
+	if p.getType() != Syn && u.state != SynSent && !(p.getConnId() == u.senderConnID || p.getConnId() == u.rcvrConnID) {
+		return u.prepareReply(p, Reset), nil
+	}
+
+	// Update remote window size
+	u.remoteWndSize = p.getWndSize()
+	u.logger.Printf("UTP remote_wnd_size: %d", u.remoteWndSize)
+
+	// Update remote peer's delay between them sending the packet and us receiving it
+	u.theirDelay = absDiff(nowMicroSecs(), p.timestamp())
+	u.logger.Printf("their_delay: %d\n", u.theirDelay)
+
+	state, ty := u.state, p.getType()
+	if state == New && ty == Syn {
+		u.connectedTo = addr
+		u.ackNr = p.getSeqNr()
+		u.seqNr = uint16(rand.Int31())
+		u.rcvrConnID = p.getConnId() + 1
+		u.senderConnID = p.getConnId()
+		u.state = Connected
+		u.lastDropped = u.ackNr
+
+		return u.prepareReply(p, State), nil
+	} else if ty == Syn {
+		return u.prepareReply(p, Reset), nil
+	} else if state == SynSent && ty == State {
+		u.connectedTo = addr
+		u.ackNr = p.getSeqNr()
+		u.seqNr += 1
+		u.state = Connected
+		u.lastAcked = p.getAckNr()
+		u.lastAckedTimestamp = nowMicroSecs()
+		return nil, nil // Okay(None)
+	} else if state == SynSent {
+		return nil, fmt.Errorf("Invalid Reply")
+	} else if (state == Connected && ty == Data) || (state == FinSent && ty == Data) {
+		return u.handleDataPacket(p), nil
+	} else if state == Connected && ty == State {
+		u.handleStatePacket(p)
+		return nil, nil
+	} else if (state == Connected && ty == Fin) || (state == FinSent && ty == Fin) {
+		if p.getAckNr() < u.seqNr {
+			u.logger.Println("FIN received but there are missing acknowledgements for sent packets")
+		}
+		reply := u.prepareReply(p, State)
+
+		if p.getSeqNr()-p.getAckNr() > 1 {
+			// Set SACK extension payload if the packet is not in order
+			sack := u.buildSelectiveAck()
+			if len(sack) != 0 {
+				reply.setSack(sack)
+			}
+		}
+		u.state = Closed
+		return reply, nil
+	} else if state == Closed && ty == Fin {
+		return u.prepareReply(p, State), nil
+	} else if state == FinSent && ty == State {
+		if p.getAckNr() == u.seqNr {
+			u.state = Closed
+		} else {
+			u.handleStatePacket(p)
+		}
+		return nil, nil
+	} else if ty == Reset {
+		u.state = ResetReceived
+		return nil, fmt.Errorf("Connection Reset")
+	} else {
+		u.logger.Printf("Unimplemented handling for (%d, %d)\n", state, ty)
+		return nil, fmt.Errorf("Unimplemented handling for (%d, %d)\n", state, ty)
+	}
+}
+
+func (u *UtpSocket) prepareReply(p *Packet, t PacketType) *Packet {
+	return &Packet{}
+}
+
+func (u *UtpSocket) handleDataPacket(p *Packet) *Packet {
+	return nil
+}
+
+func (u *UtpSocket) handleStatePacket(p *Packet) {
+
+}
+
+func (u *UtpSocket) buildSelectiveAck() []byte {
+	return nil
 }
