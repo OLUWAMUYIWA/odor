@@ -46,8 +46,8 @@ const (
 )
 
 type DelayDifferenceSample struct {
-	received_at TimeStamp
-	difference  Delay
+	receivedAt TimeStamp
+	difference Delay
 }
 
 type SocketAddr struct {
@@ -631,36 +631,298 @@ func (u *UtpSocket) handleStatePacket(p *Packet) {
 		}
 	}
 
-	// var pktLossDetected bool
-	// if len(u.sendWdw) != 0 && u.dupAckCount == 3 {
-	// 	pktLossDetected = true
-	// }
+	var pktLossDetected bool
+	if len(u.sendWdw) != 0 && u.dupAckCount == 3 {
+		pktLossDetected = true
+	}
 
-	// // Process extensions, if any
-	// extIter := p.getExts()
+	// Process extensions, if any
+	extIter := p.getExts()
+	ext, ok := extIter.next()
+	for ; ok; ext, ok = extIter.next() {
+		if ext.etype() == SelectiveAck {
+			// If three or more packets are acknowledged past the implicit missing one,
+			// assume it was lost.
+			bitStr := NewBitStream(ext.data)
+			if bitStr.CountOnes() >= 3 {
+				u.resendLostPacket(p.getAckNr() + 1)
+				pktLossDetected = true
+			}
+			if len(u.sendWdw) != 0 {
+				lastSeqNr := u.sendWdw[len(u.sendWdw)-1].getSeqNr()
+				lostPackets := []uint16{}
+				rcvd, err := bitStr.Next()
+				for i := 0; err == nil; rcvd, err = bitStr.Next() {
+					if !rcvd {
+						seqNr := p.getAckNr() + 2 + uint16(i)
+						if seqNr < lastSeqNr {
+							lostPackets = append(lostPackets, seqNr)
+						}
+					}
+					i += 1
+				}
 
+				for _, seqNr := range lostPackets {
+					u.logger.Printf("SACK: packet %d lost\n", seqNr)
+					u.resendLostPacket(seqNr)
+					pktLossDetected = true
+				}
+			} else {
+				u.logger.Printf("Unknown extension %d, ignoring", ext.etype())
+			}
+		}
+	}
+
+	// Three duplicate ACKs mean a fast resend request. Resend the first unacknowledged packet
+	// if the incoming packet doesn't have a SACK extension. If it does, the lost packets were
+	// already resent.
+	ext, ok = extIter.next()
+	var anySelectiveAck bool
+	for ; ok; ext, ok = extIter.next() {
+		if ext.etype() == SelectiveAck {
+			anySelectiveAck = true
+			break
+		}
+	}
+	if len(u.sendWdw) != 0 && u.dupAckCount != 3 && !anySelectiveAck {
+		u.resendLostPacket(p.getAckNr() + 1)
+	}
+
+	// Packet lost, halve the congestion window
+	if pktLossDetected {
+		u.logger.Println("packet loss detected, halving congestion window")
+		u.cwnd = max(u.cwnd/2, MIN_CWND*MSS)
+	}
+
+	// Success, advance send window
+	u.advanceSendWindow()
 }
 
-func (u *UtpSocket) buildSelectiveAck() []byte {
+// advanceSendWindow forgets sent packets that were acknowledged by the remote peer.
+func (u *UtpSocket) advanceSendWindow() {
+	// The reason I'm not removing the first element in a loop while its sequence number is
+	// smaller than `last_acked` is because of wrapping sequence numbers, which would create the
+	// sequence [..., 65534, 65535, 0, 1, ...]. If `last_acked` is smaller than the first
+	// packet's sequence number because of wraparound (for instance, 1), no packets would be
+	// removed, as the condition `seq_nr < last_acked` would fail immediately.
+	//
+	// On the other hand, I can't keep removing the first packet in a loop until its sequence
+	// number matches `last_acked` because it might never match, and in that case no packets
+	// should be removed.
+	for pos, p := range u.sendWdw {
+		if p.getSeqNr() == u.lastAcked {
+			for i := 0; i <= pos; i++ {
+				packet := u.sendWdw[0]
+				u.sendWdw = u.sendWdw[1:]
+				u.currWdw -= uint32(packet.len())
+			}
+			break
+		}
+	}
+	u.logger.Printf("self.curr_window: %v\n", u.currWdw)
+}
+
+// sendPacket sends one packet
+func (u *UtpSocket) sendPacket(p *Packet) error {
+	u.logger.Printf("current window: %d\n", len(u.sendWdw))
+	maxInFlight := min(u.cwnd, u.remoteWndSize)
+	maxInFlight = max(MIN_CWND*MSS, maxInFlight)
+
+	now := nowMicroSecs()
+	// Wait until enough in-flight packets are acknowledged for rate control purposes, but don't
+	// wait more than 500 ms (PRE_SEND_TIMEOUT) before sending the packet.
+	for u.currWdw >= maxInFlight && nowMicroSecs()-now < TimeStamp(PRE_SEND_TIMEOUT) {
+		u.logger.Printf("self.curr_window: %d\n", u.currWdw)
+		u.logger.Printf("max_inflight: %d\n", maxInFlight)
+		u.logger.Printf("u.duplicate_ack_count: %d\n", u.dupAckCount)
+		u.logger.Printf("now_microseconds() - now = %d\n", nowMicroSecs()-now)
+		buf := make([]byte, BUF_SIZE)
+		if _, _, err := u.recv(buf); err != nil {
+			return err
+		}
+	}
+	u.logger.Printf("out: now_microseconds() - now = %d\n", nowMicroSecs()-now)
+	// Check if it still makes sense to send packet, as we might be trying to resend a lost
+	// packet acknowledged in the receive loop above.
+	// If there were no wrapping around of sequence numbers, we'd simply check if the packet's
+	// sequence number is greater than `last_acked`.
+
+	// comeback to implement wrapping sub here
+	distA := p.getSeqNr() - u.lastAcked
+	distB := u.lastAcked - p.getSeqNr()
+	if distA > distB {
+		u.logger.Println("Packet already acknowledged, skipping...")
+		return nil
+	}
+
+	p.setTimestamp(nowMicroSecs())
+	p.setTimespanDiff(u.theirDelay)
+	if _, err := u.conn.WriteToUDP(p.asBytes(), u.connectedTo); err != nil {
+		return err
+	}
+	u.logger.Printf("Sent: %s\n", *p)
 	return nil
 }
+func (u *UtpSocket) resendLostPacket(lostPktNr uint16) {
+	u.logger.Printf("---> resend_lost_packet(%d) <---\n", lostPktNr)
+	var found bool
+	for pos, p := range u.sendWdw {
+		if p.getSeqNr() == lostPktNr {
+			found = true
+			u.logger.Printf("u.send_window.len(): %d\n", len(u.sendWdw))
+			u.logger.Printf("Position: %d\n", pos)
+			u.sendPacket(&u.sendWdw[pos])
+			// We intentionally don't increase `curr_window` because otherwise a packet's length
+			// would be counted more than once
+			break
+		}
+	}
 
-func (u *UtpSocket) updateBaseDelay(d Delay, t TimeStamp) {
+	if !found {
+		u.logger.Printf("Packet %d not found\n", lostPktNr)
+	}
+
+	u.logger.Println("---> END resend_lost_packet <---")
+}
+
+type diff struct {
+	byt, bit int
+}
+
+// buildSelectivAck builds the selective acknowledgement extension data for usage in packets.
+func (u *UtpSocket) buildSelectiveAck() []byte {
+	stashed := []diff{}
+	for _, p := range u.incomingBuff {
+		if p.getSeqNr() > u.seqNr+1 {
+			dif := int(p.getSeqNr() - u.ackNr - 2)
+			byt, bit := dif/8, dif%8
+			stashed = append(stashed, diff{byt: byt, bit: bit})
+		}
+	}
+	sack := []byte{}
+	for _, d := range stashed {
+		// Make sure the amount of elements in the SACK vector is a
+		// multiple of 4 and enough to represent the lost packets
+		for d.byt > len(sack) || len(sack)%4 == 0 {
+			sack = append(sack, 0)
+		}
+		sack[d.byt] |= 1 << d.bit
+	}
+	return sack
+}
+
+// updateBaseDelay inserts a new sample in the base delay list.
+// The base delay list contains at most `BASE_HISTORY` samples, each sample is the minimum
+// measured over a period of a minute (MAX_BASE_DELAY_AGE).
+func (u *UtpSocket) updateBaseDelay(baseDelay Delay, now TimeStamp) {
+	if len(u.baseDelays) == 0 || int64(now)-int64(u.lastRollover) > int64(MAX_BASE_DELAY_AGE) {
+		// update last rollover
+		u.lastRollover = now
+
+		// drop oldest dample if need be
+		if len(u.baseDelays) == int(BASE_HISTORY) {
+			if len(u.baseDelays) != 0 {
+				u.baseDelays = u.baseDelays[1:]
+			}
+		}
+		// insert new sample
+		u.baseDelays = append(u.baseDelays, baseDelay)
+	} else {
+		// Replace sample for the current minute if the delay is lower
+		lastIdx := len(u.baseDelays) - 1
+		if baseDelay < u.baseDelays[lastIdx] {
+			u.baseDelays[lastIdx] = baseDelay
+		}
+
+	}
+}
+
+// updateCurrDelay inserts a new sample in the current delay list after removing samples older than one RTT, as
+// specified in RFC6817.
+func (u *UtpSocket) updateCurrDelay(d Delay, now TimeStamp) {
+	// Remove samples more than one RTT old
+	rtt := Delay(int64(u.rtt) * 100)
+	for len(u.currentDelays) != 0 && int64(now)-int64(u.currentDelays[0].receivedAt) > int64(rtt) {
+		u.currentDelays = u.currentDelays[1:]
+	}
+
+	// insert new measurement
+	u.currentDelays = append(u.currentDelays, DelayDifferenceSample{
+		receivedAt: now,
+		difference: d,
+	})
 
 }
 
-func (u *UtpSocket) updateCurrDelay(d Delay, t TimeStamp) {
-
-}
-
+// Calculates the new congestion window size, increasing it or decreasing it.
+//
+// This is the core of uTP, the [LEDBAT][ledbat_rfc] congestion algorithm. It depends on
+// estimating the queuing delay between the two peers, and adjusting the congestion window
+// accordingly.
+//
+// `off_target` is a normalized value representing the difference between the current queuing
+// delay and a fixed target delay (`TARGET`). `off_target` ranges between -1.0 and 1.0. A
+// positive value makes the congestion window increase, while a negative value makes the
+// congestion window decrease.
+//
+// `bytes_newly_acked` is the number of bytes acknowledged by an inbound `State` packet. It may
+// be the size of the packet explicitly acknowledged by the inbound packet (i.e., with sequence
+// number equal to the inbound packet's acknowledgement number), or every packet implicitly
+// acknowledged (every packet with sequence number between the previous inbound `State`
+// packet's acknowledgement number and the current inbound `State` packet's acknowledgement
+// number).
+//
+//[ledbat_rfc]: https://tools.ietf.org/html/rfc6817
 func (u *UtpSocket) updateCongestionWdw(offTarget float64, bytesNewlyAcked uint32) {
+	flightsize := u.currWdw
 
+	cwndIncr := GAIN * offTarget * float64(bytesNewlyAcked) * float64(MSS)
+	cwndIncr = cwndIncr / float64(u.cwnd)
+	u.logger.Printf("cwnd increase: %f\n", cwndIncr)
+
+	u.cwnd = uint32(float64(u.cwnd) + cwndIncr)
+	maxAllowedCwnd := flightsize + ALLOWED_INCREASE*MSS
+	u.cwnd = min(u.cwnd, maxAllowedCwnd)
+	u.cwnd = max(u.cwnd, MIN_CWND*MSS)
+
+	u.logger.Printf("cwnd: %d\n", u.cwnd)
+	u.logger.Printf("max_allowed_cwnd: %d\n", maxAllowedCwnd)
 }
 
 func (u *UtpSocket) updateCongestionTimeOut(currDelay int32) {
+	delta := u.rtt - currDelay
+	u.rtt += (abs(delta) - u.rttVariance) / 4
+	u.congestionTimeout = max(uint64(u.rtt+u.rttVariance*4), MIN_CONGESTION_TIMEOUT)
+	u.congestionTimeout = min(u.congestionTimeout, MIN_CONGESTION_TIMEOUT)
 
+	u.logger.Printf("current_delay: %d\n", currDelay)
+	u.logger.Printf("delta: %d\n", delta)
+	u.logger.Printf("u.rtt_variance: %d\n", u.rttVariance)
+	u.logger.Printf("u.rtt: %d\n", u.rtt)
+	u.logger.Printf("u.congestion_timeout: %d\n", u.congestionTimeout)
 }
 
 func (u *UtpSocket) queuingDelay() Delay {
+	filteredCurrentDelay := u.filteredCurrentDelay()
+	minBaseDelay := u.minBaseDelay()
+	queuingDelay := filteredCurrentDelay - minBaseDelay
+
+	u.logger.Printf("filtered_current_delay:%d\n", filteredCurrentDelay)
+	u.logger.Printf("min_base_delay:%d\n", minBaseDelay)
+	u.logger.Printf("queuing_delay:%d\n", queuingDelay)
+
+	return queuingDelay
+}
+
+// calculates the filtered current delay in the current window.
+// The current delay is calculated through application of the exponential
+// weighted moving average filter with smoothing factor 0.333 over the
+// current delays in the current window.
+func (u UtpSocket) filteredCurrentDelay() Delay {
+	_ = u.currentDelays
+	return 0
+}
+
+func (u UtpSocket) minBaseDelay() Delay {
 	return 0
 }

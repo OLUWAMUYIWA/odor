@@ -1,49 +1,10 @@
 package utp
 
 import (
-	"fmt"
 	"math"
 	"math/rand"
 	"time"
 )
-
-type BitStream struct {
-	data      []byte
-	next, end int
-}
-
-func NewBitStream(b []byte) BitStream {
-	return BitStream{
-		data: b,
-		next: 0,
-		end:  (len(b) * 8),
-	}
-}
-
-// comeback
-func (bs BitStream) CountOnes() int {
-	n := 0
-	for _, b := range bs.data {
-		for i := 0; i < 8; i++ {
-			if isBitSet(b, i) {
-				n += 1
-			}
-		}
-	}
-	return n
-}
-
-func isBitSet(b byte, i int) bool {
-	return (b & (1 << i)) == 1
-}
-
-func (b *BitStream) Next() (bool, error) {
-	if b.end != b.next {
-		byteIndex, bitIndex := b.next/8, byte(b.next%8)
-		return (b.data[byteIndex] >> bitIndex & 0x01) == 1, nil
-	}
-	return false, fmt.Errorf("Ended, anything beyond this is out of range")
-}
 
 func randSeqID() (uint16, uint16) {
 	rand.Seed(time.Now().Unix())
@@ -70,4 +31,35 @@ func absDiff(a, b TimeStamp) Delay {
 	} else {
 		return Delay(b - a)
 	}
+}
+
+type number interface {
+	int64 | int32 | int16 | int8 | int | uint | uint16 | uint8 | uint32 | uint64
+}
+
+func max[K number](x, y K) K {
+	if x < y {
+		return y
+	}
+	return x
+}
+
+func min[K number](x, y K) K {
+	if x > y {
+		return y
+	}
+	return x
+}
+
+func abs[K number](x K) K {
+	if x < 0 {
+		return 0 - x
+	}
+	return x
+}
+
+// ewma calculates the exponential weighted moving average for a vector of numbers, with a smoothing
+// factor `alpha` between 0 and 1. A higher `alpha` discounts older observations faster.
+func ewma() {
+
 }
