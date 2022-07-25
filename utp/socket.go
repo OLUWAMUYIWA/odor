@@ -262,6 +262,10 @@ func connect(addr SocketAddr) (*UtpSocket, error) {
 	return &utpSock, nil
 }
 
+// Close gracefully closes connection to peer.
+//
+// This method allows both peers to receive all packets still in
+// flight.
 func (u *UtpSocket) Close() error {
 	if u.state == Closed || u.state == New || u.state == SynSent {
 		return nil
@@ -293,8 +297,13 @@ func (u *UtpSocket) Close() error {
 	return nil
 }
 
+// RecvFrom Receives data from socket.
+//
+// On success, returns the number of bytes read and the sender's address.
+// Returns 0 bytes read after receiving a FIN packet when the remaining
+// in-flight packets are consumed.
 func (u *UtpSocket) RecvFrom(b []byte) (int, *net.UDPAddr, error) {
-	read := u.FlushIncomingBuffer(b)
+	read := u.flushIncomingBuffer(b)
 	if read > 0 {
 		return read, u.connectedTo, nil
 	}
@@ -380,7 +389,7 @@ func (u *UtpSocket) recv(buf []byte) (int, *net.UDPAddr, error) {
 		u.logger.Printf("sent: %s", pkt)
 	}
 
-	read := u.FlushIncomingBuffer(buf)
+	read := u.flushIncomingBuffer(buf)
 
 	return read, rmtSource, nil
 }
@@ -427,6 +436,26 @@ func (u *UtpSocket) handleRecieveTimeout() error {
 	return nil
 }
 
+// SendTo sends data on the socket to the remote peer. On success, returns the number of bytes
+// written.
+//
+// # Implementation details
+//
+// This method inserts packets into the send buffer and keeps trying to
+// advance the send window until an ACK corresponding to the last packet is
+// received.
+//
+// Note that the buffer passed to `send_to` might exceed the maximum packet
+// size, which will result in the data being split over several packets.
+func (u *UtpSocket) SendTo(buf []byte) (int, error) {
+	if u.state == Closed {
+		return 0, os.ErrClosed
+	}
+	//totalLen := len(buf)
+	// chunk
+	return 0, nil
+}
+
 func (u *UtpSocket) sendFastRsndReq() {
 	for i := 0; i < 3; i++ {
 		pkt := NewPacket()
@@ -440,7 +469,7 @@ func (u *UtpSocket) sendFastRsndReq() {
 	}
 }
 
-func (u *UtpSocket) FlushIncomingBuffer(b []byte) int {
+func (u *UtpSocket) flushIncomingBuffer(b []byte) int {
 	if len(u.pendingData) != 0 {
 		nFlushed := copy(b, u.pendingData)
 		if nFlushed == len(u.pendingData) {
@@ -467,8 +496,18 @@ func (u *UtpSocket) FlushIncomingBuffer(b []byte) int {
 	return 0
 }
 
-func (u *UtpSocket) advIncomingBuf() {
-
+// advIncomingBuf removes a packet in the incoming buffer and updates the current acknowledgement number.
+func (u *UtpSocket) advIncomingBuf() (Packet, error) {
+	if len(u.incomingBuff) != 0 {
+		p := u.incomingBuff[0]
+		u.incomingBuff = u.incomingBuff[1:]
+		u.logger.Printf("Removed packet from incoming buffer: %d\n", p)
+		u.ackNr = p.getSeqNr()
+		u.lastDropped = u.ackNr
+		return p, nil
+	} else {
+		return Packet{}, fmt.Errorf("empty buffer")
+	}
 }
 
 func (c *UtpSocket) Flush() error {
@@ -763,6 +802,7 @@ func (u *UtpSocket) sendPacket(p *Packet) error {
 	u.logger.Printf("Sent: %s\n", *p)
 	return nil
 }
+
 func (u *UtpSocket) resendLostPacket(lostPktNr uint16) {
 	u.logger.Printf("---> resend_lost_packet(%d) <---\n", lostPktNr)
 	var found bool
@@ -919,10 +959,20 @@ func (u *UtpSocket) queuingDelay() Delay {
 // weighted moving average filter with smoothing factor 0.333 over the
 // current delays in the current window.
 func (u UtpSocket) filteredCurrentDelay() Delay {
-	_ = u.currentDelays
-	return 0
+	input := make([]Delay, len(u.currentDelays))
+	for i, d := range u.currentDelays {
+		input[i] = d.difference
+	}
+	return Delay(ewma(input, 0.33))
 }
 
+// minBaseDelay calculates the lowest base delay in the current window.
 func (u UtpSocket) minBaseDelay() Delay {
-	return 0
+	var min Delay
+	for _, d := range u.baseDelays {
+		if d < min {
+			min = d
+		}
+	}
+	return min
 }

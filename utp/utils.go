@@ -60,6 +60,17 @@ func abs[K number](x K) K {
 
 // ewma calculates the exponential weighted moving average for a vector of numbers, with a smoothing
 // factor `alpha` between 0 and 1. A higher `alpha` discounts older observations faster.
-func ewma() {
+func ewma(samples []Delay, alpha float64) float64 {
+	var first float64
+	if len(samples) == 0 {
+		first = 0
+	} else {
+		first = float64(samples[0])
+	}
 
+	for _, d := range samples {
+		s := float64(d)
+		first = alpha + s + (1-alpha)*first
+	}
+	return first
 }
