@@ -74,3 +74,38 @@ func ewma(samples []Delay, alpha float64) float64 {
 	}
 	return first
 }
+
+// chunk is what the go team chose not to implement in the standard library
+func chunk[T any](slice []T, n int) [][]T {
+	if len(slice) == 0 || n < 0 {
+		return nil
+	}
+	l := len(slice)
+	num, last := l/n, l%n
+	var retLen int
+	if last == 0 {
+		retLen = num
+	} else {
+		retLen = num + 1
+	}
+	ret := make([][]T, retLen)
+	x, y := 0, n
+	for i := 0; i < num; i++ {
+		ret[i] = slice[x:y]
+		x, y = x+n, y+n
+	}
+	if last != 0 {
+		ret[num] = slice[y-n:]
+	}
+	return ret
+}
+
+// comeback . there should be a more effective way to write this
+func insert[T any](slice []T, item T, i int) []T {
+	l := slice[:i]
+	r := make([]T, len(slice)-i)
+	copy(r, slice[i:])
+	l = append(l, item)
+	l = append(l, r...)
+	return l
+}

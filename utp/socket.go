@@ -8,7 +8,6 @@ import (
 	"net"
 	"os"
 	"regexp"
-	"strconv"
 	"time"
 )
 
@@ -50,14 +49,14 @@ type DelayDifferenceSample struct {
 	difference Delay
 }
 
-type SocketAddr struct {
-	ipAddr net.IPAddr
-	port   int
-}
+// type SocketAddr struct {
+// 	ipAddr net.IPAddr
+// 	port   int
+// }
 
-func (s SocketAddr) String() string {
-	return net.JoinHostPort(s.ipAddr.String(), strconv.Itoa(s.port))
-}
+// func (s SocketAddr) String() string {
+// 	return net.JoinHostPort(s.ipAddr.String(), strconv.Itoa(s.port))
+// }
 
 type UtpSocket struct {
 	logger *log.Logger
@@ -144,6 +143,14 @@ type UtpSocket struct {
 	maxRetransmissionRetries uint32
 }
 
+// func BindUtpSock(addr string) (*UtpSocket, error) {
+// 	sock, err := net.ResolveUDPAddr("udp4", addr)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+
+// }
+
 func NewSocketFromRaw(addr *net.UDPAddr, remote *net.UDPAddr, conn *net.UDPConn) UtpSocket {
 	sendID, rcvID := randSeqID()
 
@@ -191,18 +198,20 @@ func (u UtpSocket) peerAddr() (string, error) {
 	return "", fmt.Errorf("Not Connected")
 }
 
-func connect(addr SocketAddr) (*UtpSocket, error) {
-	raddr, err := net.ResolveUDPAddr("udp", addr.String())
+func connect(addr string) (*UtpSocket, error) {
+	raddr, err := net.ResolveUDPAddr("udp", addr)
 
 	if err != nil {
 		return nil, err
 	}
+	// local address
 	var lAddr string
 	if IpV4Regex.MatchString(raddr.String()) {
 		lAddr = "0.0.0.0:0"
 	} else {
 		lAddr = "[::]:0"
 	}
+
 	laddr, err := net.ResolveUDPAddr("udp", lAddr)
 	if err != nil {
 		return nil, err
@@ -337,6 +346,8 @@ func (u *UtpSocket) recv(buf []byte) (int, *net.UDPAddr, error) {
 	var nRead int
 	var rmtSource *net.UDPAddr
 	var err error
+
+	// Try to receive a packet and handle timeouts
 	for {
 		if retries >= int(u.maxRetransmissionRetries) {
 			u.state = Closed
@@ -369,18 +380,19 @@ func (u *UtpSocket) recv(buf []byte) (int, *net.UDPAddr, error) {
 		retries += 1
 	}
 
+	// Decode received data into a packet
 	packet, err := PacketFromBytes(b[:nRead])
 	if err != nil {
 		u.logger.Printf("Ignoring invalid packet: %s\n", err)
 		return 0, u.connectedTo, nil
 	}
-
 	u.logger.Printf("received: %s", *packet)
+
+	// Process packet, including sending a reply if necessary
 	pkt, err := u.handlePacket(packet, rmtSource)
 	if err != nil {
 		return 0, nil, err
 	}
-
 	if pkt != nil {
 		pkt.setWndSize(WINDOW_SIZE)
 		if _, err = u.conn.WriteToUDP(pkt.asBytes(), rmtSource); err != nil {
@@ -389,9 +401,52 @@ func (u *UtpSocket) recv(buf []byte) (int, *net.UDPAddr, error) {
 		u.logger.Printf("sent: %s", pkt)
 	}
 
+	// Insert data packet into the incoming buffer if it isn't a duplicate of a previously  discarded packet
+	if packet.getType() == Data && packet.getSeqNr()-u.lastDropped > 0 {
+		err := u.insertIntoBuffer(*packet)
+		// comeback. should i return error here?
+		if err != nil {
+			return 0, nil, err
+		}
+	}
+
+	// Flush incoming buffer if possible
 	read := u.flushIncomingBuffer(buf)
 
 	return read, rmtSource, nil
+}
+
+// insertIntoBuffer inserts a packet into the socket's buffer.
+// The packet is inserted in such a way that the packets in the buffer are sorted according to
+// their sequence number in ascending order. This allows storing packets that were received out of order.
+// Trying to insert a duplicate of a packet will silently fail.
+// it's more recent (larger timestamp).
+func (u *UtpSocket) insertIntoBuffer(packet Packet) error {
+	// Immediately push to the end if the packet's sequence number comes after the last packet's.
+	var greater bool
+	if packet.getSeqNr() > u.incomingBuff[len(u.incomingBuff)-1].getSeqNr() {
+		greater = true
+	}
+
+	if greater {
+		u.incomingBuff = append(u.incomingBuff, packet)
+	} else {
+		// Find index following the most recent packet before the one we wish to insert
+		i := 0
+		for _, p := range u.incomingBuff {
+			if p.getSeqNr() < packet.getSeqNr() {
+				i += 1
+			}
+		}
+		if i < len(u.incomingBuff) {
+			if u.incomingBuff[i].getSeqNr() != packet.getSeqNr() {
+				u.incomingBuff = insert(u.incomingBuff, packet, i)
+			}
+		} else {
+			return fmt.Errorf("out of bounds")
+		}
+	}
+	return nil
 }
 
 func (u *UtpSocket) handleRecieveTimeout() error {
@@ -451,11 +506,44 @@ func (u *UtpSocket) SendTo(buf []byte) (int, error) {
 	if u.state == Closed {
 		return 0, os.ErrClosed
 	}
-	//totalLen := len(buf)
-	// chunk
-	return 0, nil
+	totalLen := len(buf)
+	chunks := chunk(buf, int(MSS)-int(HeaderSize))
+	for _, chunk := range chunks {
+		p := NewPacketWithPayload(chunk)
+		p.setSeqNr(u.seqNr)
+		p.setAckNr(u.ackNr)
+		p.setConnID(u.senderConnID)
+		u.unsentQueue = append(u.unsentQueue, p)
+
+		// Intentionally wrap around sequence number
+		u.seqNr += 1
+	}
+
+	if err := u.send(); err != nil {
+		return 0, err
+	}
+
+	return totalLen, nil
 }
 
+// send sends every packet in the unsent packet queue.
+func (u *UtpSocket) send() error {
+	for i, p := range u.unsentQueue {
+		if err := u.sendPacket(&p); err != nil {
+			u.unsentQueue = u.unsentQueue[i+1:] // every packet remainin is still on the queue
+			return err
+		}
+		u.currWdw += uint32(p.len())
+		u.sendWdw = append(u.sendWdw, p)
+	}
+	u.unsentQueue = []Packet{} // make it empty again since all sends were successful
+	return nil
+}
+
+// sendFastRsndReq sends a fast resend request to the remote peer.
+//
+// A fast resend request consists of sending three State packets (acknowledging the last
+// received packet) in quick succession.
 func (u *UtpSocket) sendFastRsndReq() {
 	for i := 0; i < 3; i++ {
 		pkt := NewPacket()
@@ -469,6 +557,11 @@ func (u *UtpSocket) sendFastRsndReq() {
 	}
 }
 
+// flushIncomingBuffer discards sequential, ordered packets in incoming buffer, starting from
+// the most recently acknowledged to the most recent, as long as there are
+// no missing packets. The discarded packets' payload is written to the
+// slice `buf`, starting in position `start`.
+// Returns the last written index.
 func (u *UtpSocket) flushIncomingBuffer(b []byte) int {
 	if len(u.pendingData) != 0 {
 		nFlushed := copy(b, u.pendingData)
@@ -510,15 +603,21 @@ func (u *UtpSocket) advIncomingBuf() (Packet, error) {
 	}
 }
 
-func (c *UtpSocket) Flush() error {
+// Flush consumes acknowledgements for every pending packet.
+func (u *UtpSocket) Flush() error {
 	buf := make([]byte, BUF_SIZE)
-	for len(c.sendWdw) != 0 {
-		if _, _, err := c.recv(buf); err != nil {
+	for len(u.sendWdw) != 0 {
+		if _, _, err := u.recv(buf); err != nil {
 			return err
 		}
+		u.logger.Printf("packets in send window: %d\n", len(u.sendWdw))
 	}
 	return nil
 }
+
+// handlePacket handles an incoming packet, updating socket state accordingly.
+//
+// Returns the appropriate reply packet, if needed.
 func (u *UtpSocket) handlePacket(p *Packet, addr *net.UDPAddr) (*Packet, error) {
 	// Acknowledge only if the packet strictly follows the previous one
 	if p.getSeqNr()-p.getAckNr() == 1 {
@@ -615,6 +714,7 @@ func (u *UtpSocket) prepareReply(original *Packet, t PacketType) *Packet {
 }
 
 func (u *UtpSocket) handleDataPacket(p *Packet) *Packet {
+	// If a FIN was previously sent, reply with a FIN packet acknowledging the received packet.
 	var ty PacketType
 	if u.state == FinSent {
 		ty = Fin
@@ -976,3 +1076,13 @@ func (u UtpSocket) minBaseDelay() Delay {
 	}
 	return min
 }
+
+// UTPListener structure representing a socket server.
+type UTPListener struct {
+	sock net.UDPAddr
+}
+
+// func (u *UTPListener) Accept() (UtpSocket, net.UDPAddr, error) {
+// 	buf := make([]byte, BUF_SIZE)
+
+// }
