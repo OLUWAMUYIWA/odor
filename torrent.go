@@ -3,8 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
-	"math/rand"
 	"crypto/sha1"
+	"math/rand"
 	"os"
 	"time"
 
@@ -65,7 +65,7 @@ func NewTorrent(torrPath, fPath string) (*Torrent, error) {
 	t.size = mInfo.Size()
 
 	// get peers using a UDPT client.... UDPT means UDP tracker protocol
-	annResp, err := GetPeers(ctx, t)
+	annResp, err := GetPeers(ctx, &t)
 	if err != nil {
 		return nil, err
 	}

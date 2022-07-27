@@ -520,3 +520,221 @@ func TestMany1(t *testing.T) {
 	}
 
 }
+
+func TestCount(t *testing.T) {
+	in := &TestInput{
+		in: []rune{'a', 'a', 'a', 'a', 'a', 'o', 'g', 'h', 'k'},
+	}
+
+	isA := Tag('a')
+	count := isA.Count(5)
+
+	res := count(in)
+
+	if err, did := res.Errored(); did {
+		t.Errorf("Error unexpected: %s", err)
+	}
+
+	lRes, ok := res.Result.(*list.List)
+
+	if !ok {
+		t.Errorf("SHould be a list but isn't")
+	}
+
+	if lRes.Len() != 5 {
+		t.Errorf("list length should be 5")
+	}
+
+	for v := lRes.Front(); v != nil; v = v.Next() {
+		r := v.Value.(rune)
+		if r != 'a' {
+			t.Errorf("Expected: %s, found: %s", "a", string(r))
+		}
+	}
+
+	// part 2
+
+	count2 := isA.Count(3)
+
+	res2 := count2(in)
+
+	if err, did := res2.Errored(); did {
+		t.Errorf("Error unexpected: %s", err)
+	}
+
+	lRes2, ok := res2.Result.(*list.List)
+
+	if !ok {
+		t.Errorf("SHould be a list but isn't")
+	}
+
+	if lRes2.Len() != 3 {
+		t.Errorf("list length should be 5")
+	}
+
+	for v := lRes2.Front(); v != nil; v = v.Next() {
+		r := v.Value.(rune)
+		if r != 'a' {
+			t.Errorf("Expected: %s, found: %s", "a", string(r))
+		}
+	}
+}
+
+func TestCount2(t *testing.T) {
+
+	// pass 3
+	in3 := &TestInput{
+		in: []rune{'a', 'a', 'a', 'a', 'a', 'o', 'g', 'h', 'k'},
+	}
+	count3 := Tag('a').Count(10)
+
+	res3 := count3(in3)
+
+	if _, did := res3.Errored(); !did {
+		t.Errorf("Error expected")
+	}
+
+	if res3.Result != nil {
+		t.Errorf("result should be nil")
+	}
+
+	if !reflect.DeepEqual(res3.Rem.(*TestInput), in3) {
+		t.Errorf("Cdr not correct: %v vs %v", res3.Rem.Cdr(), in3)
+	}
+}
+
+// we use Table-driven tests ere
+func TestThen(t *testing.T) {
+	type test struct {
+		input *TestInput
+		want  int
+	}
+	pry := OneOf([]rune{'a', 'b', 'c', '4'})
+	sec := Digit()
+	tests := []test{
+		{input: &TestInput{in: []rune{'b', '6'}}, want: 6},
+		{input: &TestInput{in: []rune{'c', '9'}}, want: 9},
+		{input: &TestInput{in: []rune{'x', '1'}}, want: 0},
+	}
+	parser := pry.Then(sec)
+
+	for _, tt := range tests {
+		res := parser(tt.input)
+		if res.Err != nil { // failed either at first or second parser
+			if !reflect.DeepEqual(tt.input, res.Rem.(*TestInput)) {
+				t.Errorf("since we failed, we should get full input")
+			}
+		} else {
+			result, ok := res.Result.(int)
+			if !ok {
+				t.Errorf("Value: %d", result)
+				t.Errorf("should be an int but isn't. instead: %s", reflect.TypeOf(result))
+			}
+			if result != tt.want {
+				t.Errorf(" wron value. expected %d, got %d", tt.want, result)
+			}
+		}
+	}
+}
+
+func TestThenDiscard(t *testing.T) {
+	type test struct {
+		input *TestInput
+		want  int
+	}
+	pry := Digit()
+	sec := OneOf([]rune{'4', 'a', 'b', 'c'})
+
+	tests := []test{
+		{input: &TestInput{in: []rune{'6', 'b', '5', 'u'}}, want: 6},
+		{input: &TestInput{in: []rune{'9', 'c'}}, want: 9},
+		{input: &TestInput{in: []rune{'1', 'x'}}, want: 0},
+	}
+	parser := pry.ThenDiscard(sec)
+
+	for _, tt := range tests {
+		res := parser(tt.input)
+		if res.Err != nil { // failed either at first or second parser
+			if !reflect.DeepEqual(tt.input, res.Rem.(*TestInput)) {
+				t.Errorf("since we failed, we should get full input")
+			}
+		} else {
+			result, ok := res.Result.(int)
+			if !ok {
+				t.Errorf("Value: %d", result)
+				t.Errorf("should be an int but isn't. instead: %s", reflect.TypeOf(result))
+			}
+			if result != tt.want {
+				t.Errorf(" wrong value. expected %d, got %d", tt.want, result)
+			}
+		}
+	}
+}
+
+func TestAndThen(t *testing.T) {
+	type wanted struct {
+		pre  string
+		mid  rune
+		post rune
+	}
+
+	type test struct {
+		input *TestInput
+		want  wanted
+	}
+
+	pry := Str("abc")
+	mid := OneOf([]rune{'4', 'a', 'b', 'c', '6'})
+	post := Tag('9')
+
+	tests := []test{
+		{input: &TestInput{in: []rune{'a', 'b', 'c', '6', '9', '5', 'u'}}, want: wanted{pre: "abc", mid: '6', post: '9'}},
+		{input: &TestInput{in: []rune{'a', 'b', 'c', '4', '5'}}, want: wanted{pre: "abc", mid: '4', post: '5'}},
+		{input: &TestInput{in: []rune{'1', 'x'}}, want: wanted{pre: "", mid: 0, post: 0}},
+	}
+	parser := pry.AndThen([]Parsec{mid, post})
+
+	for _, tt := range tests {
+		res := parser(tt.input)
+		if res.Err != nil { // failed either at first or second parser
+			if !reflect.DeepEqual(tt.input, res.Rem.(*TestInput)) {
+				t.Errorf("since we failed, we should get full input")
+			}
+		} else {
+			result, ok := res.Result.(*list.List)
+			if !ok {
+				t.Errorf("should be a list but isn't. instead: %s", reflect.TypeOf(result))
+			}
+			pre := result.Front()
+			if s, ok := pre.Value.(string); !ok {
+				t.Error("value shoule be string")
+			} else {
+				if s != tt.want.pre {
+					t.Errorf("Expected: %s, found: %s", tt.want.pre, s)
+				}
+			}
+
+			mid := pre.Next()
+			if r, ok := mid.Value.(rune); !ok {
+				t.Error("value shoule be rune")
+			} else {
+				if r != tt.want.mid {
+					t.Errorf("Expected: %d, found: %d", tt.want.mid, r)
+				}
+			}
+
+			post := mid.Next()
+			if r, ok := post.Value.(rune); !ok {
+				t.Error("value shoule be rune")
+			} else {
+				if r != tt.want.post {
+					t.Errorf("Expected: %d, found: %d", tt.want.post, r)
+				}
+			}
+		}
+	}
+}
+
+func TestAlt(t *testing.T) {
+
+}

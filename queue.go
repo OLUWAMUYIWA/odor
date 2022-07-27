@@ -3,12 +3,12 @@ package main
 import "github.com/OLUWAMUYIWA/odor/formats"
 
 type Queue struct {
-	torrent Torrent
+	torrent *Torrent
 	queue   []formats.Ibl
 	chocked bool
 }
 
-func NeWQ(t Torrent) Queue {
+func NeWQ(t *Torrent) Queue {
 	return Queue{
 		torrent: t,
 		queue:   make([]formats.Ibl, 1),

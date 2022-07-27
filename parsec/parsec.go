@@ -672,7 +672,6 @@ func Str(str string) Parsec {
 // Many0 will drive as many reps of a parser as possible, incl. zero.
 // At the first failure of the parser, it returns without erroring
 // result is a list of results of the parser being repeated
-// NB: works only with rune streams. PANICS if stream is not made up of runes
 func (p Parsec) Many0() Parsec {
 	return func(in ParserInput) PResult {
 		resList := list.New()
@@ -694,7 +693,6 @@ func (p Parsec) Many0() Parsec {
 
 // Many1 is like `Many0`, but must pass at least once
 // result is a list of results of the parser being repeated
-
 func (p Parsec) Many1() Parsec {
 	return func(in ParserInput) PResult {
 		resList := list.New()
@@ -723,19 +721,19 @@ func (p Parsec) Many1() Parsec {
 	}
 }
 
-// Count applies the mother parser `n` times, if the parser fails before the n'th time, `Count` fails too. It retrns a list
-// of the original parser's results
-
+// Count applies the mother parser `n` times, if the parser fails before the n'th time, `Count` fails too.
+// Returns a list of the original parser's results
 func (p Parsec) Count(n int) Parsec {
 	return func(in ParserInput) PResult {
-		res := PResult{list.New(), in, nil}
+		rem := in
+		res := PResult{list.New(), rem, nil}
 		for i := 0; i < n; i++ {
-			out := p(res.Rem)
+			out := p(rem)
 			if out.Err != nil {
 				return PResult{nil, in, out.Err}
 			}
 			res.Result.(*list.List).PushBack(out.Result)
-			res.Rem = out.Rem
+			rem = out.Rem
 		}
 		return res
 	}
@@ -743,10 +741,13 @@ func (p Parsec) Count(n int) Parsec {
 
 // Then joins two parsers. It discards the result of the first one.
 // If the first one suceeds, it calls the second one. If it doesn't it returns an error
-// To use `Then`,
+// I fht second one fails too, full inout is returned. more like walking back if any if the two chained parsers fail
 func (p Parsec) Then(sec Parsec) Parsec {
 	return func(in ParserInput) PResult {
 		res := p(in)
+		if res.Err != nil { //first parser failed or there's no input left
+			return PResult{nil, in, UnmatchedErr()}
+		}
 		if res.Rem.Empty() {
 			return PResult{
 				nil,
@@ -754,10 +755,10 @@ func (p Parsec) Then(sec Parsec) Parsec {
 				IncompleteErr(),
 			}
 		}
-		if res.Err != nil { //first parser failed or there's no input left
-			return PResult{nil, in, UnmatchedErr()}
-		}
 		res = sec(res.Rem)
+		if err, did := res.Errored(); did {
+			return PResult{nil, in, err}
+		}
 		return res
 	}
 }
@@ -766,15 +767,16 @@ func (p Parsec) Then(sec Parsec) Parsec {
 func (p Parsec) ThenDiscard(sec Parsec) Parsec {
 	return func(in ParserInput) PResult {
 		res := p(in)
+		//first parser failed or there's no input left
+		if res.Err != nil {
+			return PResult{nil, in, UnmatchedErr()}
+		}
 		if res.Rem.Empty() {
 			return PResult{
 				nil,
 				in,
 				IncompleteErr(),
 			}
-		}
-		if res.Err != nil { //first parser failed or there's no input left
-			return PResult{nil, in, UnmatchedErr()}
 		}
 		res2 := sec(res.Rem)
 		if res2.Err != nil { //first parser failed or there's no input left
@@ -790,8 +792,10 @@ func (p Parsec) ThenDiscard(sec Parsec) Parsec {
 func (p Parsec) AndThen(secs []Parsec) Parsec {
 	return func(in ParserInput) PResult {
 		rem := in
-		slice := make([]any, 0) // has to be a slice of any type, because we do not know the types of the results of the parsers inputed
-		result := PResult{slice, rem, nil}
+		// has to be a list of any type, because we do not know the types of the results of the parsers inputed
+		l := list.New()
+
+		result := PResult{l, rem, nil}
 		out := p(rem)
 		if out.Rem.Empty() {
 			return PResult{
@@ -803,8 +807,8 @@ func (p Parsec) AndThen(secs []Parsec) Parsec {
 		if out.Err != nil { //first parser failed or there's no input left
 			return PResult{nil, in, UnmatchedErr()}
 		}
-		slice = append(slice, out.Result)
-		// result.Result.(*list.List).PushBack(out.Result)
+		// l.PushBack(out.Result)
+		result.Result.(*list.List).PushBack(out.Result)
 		for _, sec := range secs {
 			if out.Rem.Empty() {
 				return PResult{
@@ -817,8 +821,7 @@ func (p Parsec) AndThen(secs []Parsec) Parsec {
 			if _, didErr := out.Errored(); didErr {
 				return PResult{list.New(), in, UnmatchedErr()}
 			}
-			// result.Result.(*list.List).PushBack(out.Result)
-			slice = append(slice, out.Result)
+			result.Result.(*list.List).PushBack(out.Result)
 
 		}
 		return result

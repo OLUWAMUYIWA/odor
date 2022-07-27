@@ -257,7 +257,7 @@ func ParseAnnounceResp(b []byte) (*AnnounceResp, error) {
 	return a, nil
 }
 
-func GetPeers(ctx context.Context, t Torrent) (*AnnounceResp, error) {
+func GetPeers(ctx context.Context, t *Torrent) (*AnnounceResp, error) {
 	udptc := NewUDPTClient(t.InfoH, peerId, t.mInfo.Announce)
 	connID, err := udptc.Connect(ctx)
 	if err != nil {
