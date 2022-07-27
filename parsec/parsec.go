@@ -669,12 +669,14 @@ func Str(str string) Parsec {
 	}
 }
 
-// Many0 will drive as many reps of a parser as possible, incl. zero. At the first failure of the parser, it returns without erroring
-// result is a slice of results of the parser being repeated
+// Many0 will drive as many reps of a parser as possible, incl. zero.
+// At the first failure of the parser, it returns without erroring
+// result is a list of results of the parser being repeated
+// NB: works only with rune streams. PANICS if stream is not made up of runes
 func (p Parsec) Many0() Parsec {
 	return func(in ParserInput) PResult {
-		resSlice := make([]any, 0)
-		res := PResult{resSlice, in, nil}
+		resList := list.New()
+		res := PResult{resList, in, nil}
 		for !res.Rem.Empty() {
 			out := p(res.Rem)
 			if out.Err != nil {
@@ -682,8 +684,8 @@ func (p Parsec) Many0() Parsec {
 				//
 				return res
 			}
-			resSlice = append(resSlice, out.Result)
-			res.Result = resSlice
+			resList.PushBack(out.Result)
+			res.Result = resList
 			res.Rem = out.Rem
 		}
 		return res
@@ -691,20 +693,20 @@ func (p Parsec) Many0() Parsec {
 }
 
 // Many1 is like `Many0`, but must pass at least once
-// result is a slice of results of the parser being repeated
+// result is a list of results of the parser being repeated
 
 func (p Parsec) Many1() Parsec {
 	return func(in ParserInput) PResult {
-		resSlice := make([]any, 0)
-		res := PResult{resSlice, in, nil}
+		resList := list.New()
+		res := PResult{resList, in, nil}
 		//ensuring that at least one succeeds
 		first := p(in)
 		if e, did := first.Errored(); did {
 			res.Err = e.(*ParsecErr)
 			return res
 		}
-		resSlice = append(resSlice, first.Result)
-		res.Result = resSlice
+		resList.PushBack(first.Result)
+		res.Result = resList
 		res.Rem = first.Rem
 
 		//now to the loop
@@ -713,8 +715,8 @@ func (p Parsec) Many1() Parsec {
 			if out.Err != nil {
 				return res
 			}
-			resSlice = append(resSlice, out.Result)
-			res.Result = resSlice
+			resList.PushBack(out.Result)
+			res.Result = resList
 			res.Rem = out.Rem
 		}
 		return res

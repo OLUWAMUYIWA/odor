@@ -425,17 +425,22 @@ func TestMany0(t *testing.T) {
 		t.Errorf("Should never error. Error: %s", err)
 	}
 
-	lRes, ok := res.Result.([]any)
+	lRes, ok := res.Result.(*list.List)
 
-	if len(lRes) != 4 {
+	if lRes.Len() != 4 {
 		t.Errorf("list length should be 4")
 	}
 
-	expected := []int32{'a', 'a', 'a', 'a'}
-	if !reflect.DeepEqual(lRes, expected) {
-		t.Errorf("Saw: %v", res.Result)
-		t.Errorf("Expected: %v, got %v", expected, lRes)
+	// expected := []int32{'a', 'a', 'a', 'a'}
+	for e := lRes.Front(); e != nil; e = e.Next() {
+		if !reflect.DeepEqual(e.Value, 'a') {
+			t.Errorf("Expected: %v, got %v", "a", e.Value)
+		}
 	}
+	// if !reflect.DeepEqual(lRes, expected) {
+	// 	t.Errorf("Saw: %v", res.Result)
+	// 	t.Errorf("Expected: %v, got %v", expected, lRes)
+	// }
 
 	in = &TestInput{
 		in: []rune{'a', 'a', 'a', 'a', 'o', 'g', 'h', 'k'},
@@ -449,13 +454,13 @@ func TestMany0(t *testing.T) {
 		t.Errorf("Error: %s", err)
 	}
 
-	lRes2, ok := res.Result.([]rune)
+	lRes2, ok := res.Result.(*list.List)
 
 	if !ok {
-		t.Errorf("SHould be a slice but isn't")
+		t.Errorf("SHould be a list but isn't")
 	}
 
-	if len(lRes2) != 0 {
+	if lRes2.Len() != 0 {
 		t.Errorf("list length should be 0")
 	}
 
@@ -467,8 +472,8 @@ func TestMany1(t *testing.T) {
 	}
 
 	isA := Tag('a')
-	many0_Tag := isA.Many0()
-	res := many0_Tag(in)
+	many1_Tag := isA.Many1()
+	res := many1_Tag(in)
 
 	if err, did := res.Errored(); did {
 		t.Errorf("Error: %s", err)
@@ -491,28 +496,27 @@ func TestMany1(t *testing.T) {
 		}
 	}
 
-}
-
-func TestMany1Nil(t *testing.T) {
-	in := &TestInput{
+	// part2
+	in = &TestInput{
 		in: []rune{'a', 'a', 'a', 'a', 'o', 'g', 'h', 'k'},
 	}
 
-	isA := Tag('b')
-	many0_Tag := isA.Many0()
-	res := many0_Tag(in)
+	isA = Tag('b')
+	many1_Tag = isA.Many1()
+	res = many1_Tag(in)
 
-	if _, did := res.Errored(); !did {
-		t.Errorf(" Should have errored")
+	if err, did := res.Errored(); !did {
+		t.Errorf("Should error but didn't. Error: %s", err)
 	}
 
-	lRes, ok := res.Result.(*list.List)
+	lRes2, ok := res.Result.(*list.List)
 
 	if !ok {
 		t.Errorf("SHould be a list but isn't")
 	}
 
-	if lRes.Len() != 0 {
+	if lRes2.Len() != 0 {
 		t.Errorf("list length should be 0")
 	}
+
 }
