@@ -250,23 +250,17 @@ func TestTakeWhile(t *testing.T) {
 
 	res := take(in)
 
-	resList := res.Result.(*list.List)
+	resList := res.Result.([]int32)
 
-	if resList.Len() != 5 {
+	if len(resList) != 5 {
 		t.Errorf("Should be 5")
 	}
-
-	i := 0
-
-	for e := resList.Front(); e != nil; e = e.Next() {
-		if v := e.Value.(rune); v != (*in).in[i] {
-			t.Errorf("Not the runes we expected")
-		}
-		i++
+	expexted := []rune{'a', 'b', 'c', 'd', 'e'}
+	if !reflect.DeepEqual(resList, expexted) {
+		t.Errorf("Not the runes we expected: %v VS %v", resList, expexted)
 	}
 
 }
-
 
 func TestTerminated(t *testing.T) {
 	in := &TestInput{
@@ -284,7 +278,6 @@ func TestTerminated(t *testing.T) {
 		t.Errorf("Should return: %s, but got: %s", match, ret)
 	}
 
-
 	in = &TestInput{
 		in: []rune{'c', 'a', 't', 'd', 'o', 'g', 'h', 'k'},
 	}
@@ -296,12 +289,11 @@ func TestTerminated(t *testing.T) {
 		t.Errorf("Should have errored")
 	}
 
-	if ret := res.Result; ret != nil  {
+	if ret := res.Result; ret != nil {
 		t.Errorf("Should return: nil, but got: %s", ret)
 	}
 
 }
-
 
 func TestPreceded(t *testing.T) {
 	in := &TestInput{
@@ -320,7 +312,6 @@ func TestPreceded(t *testing.T) {
 		t.Errorf("Should return: %s, but got: %s", match, ret)
 	}
 
-
 	in = &TestInput{
 		in: []rune{'c', 'a', 't', 'd', 'o', 'g', 'h', 'k'},
 	}
@@ -333,7 +324,7 @@ func TestPreceded(t *testing.T) {
 		t.Errorf("Should have errored")
 	}
 
-	if ret := res.Result; ret != nil  {
+	if ret := res.Result; ret != nil {
 		t.Errorf("Should return: nil, but got: %s", ret)
 	}
 }
@@ -355,8 +346,24 @@ func TestNumber(t *testing.T) {
 	if len(rem.in) != len(expectedRem.in) {
 		t.Errorf("expected : %d, foundL %d", len(expectedRem.in), len(rem.in))
 	}
-} 
 
+	in2 := &TestInput{
+		in: []rune{'-', '2', '5', '6', 'd', 'o', 'g', 'h', 'k'},
+	}
+	expextedNeg := -256
+	res2 := Number()(in2)
+	if ans := res2.Result.(int); ans != expextedNeg {
+		t.Errorf("Expected %d, found %d", expextedNeg, ans)
+	}
+
+	rem2 := res2.Rem.(*TestInput)
+	expectedRem2 := &TestInput{
+		in: in.in[4:],
+	}
+	if len(rem.in) != len(expectedRem.in) {
+		t.Errorf("expected : %d, foundL %d", len(expectedRem2.in), len(rem2.in))
+	}
+}
 
 func TestChars(t *testing.T) {
 	in := &TestInput{
@@ -389,7 +396,7 @@ func TestStr(t *testing.T) {
 
 	strParsec := Str(str)
 
-	res := strParsec(in);
+	res := strParsec(in)
 
 	if err, did := res.Errored(); did {
 		t.Errorf("Errored: %s", err)
@@ -404,7 +411,6 @@ func TestStr(t *testing.T) {
 	}
 }
 
-
 func TestMany0(t *testing.T) {
 
 	in := &TestInput{
@@ -416,24 +422,19 @@ func TestMany0(t *testing.T) {
 	res := many0_Tag(in)
 
 	if err, did := res.Errored(); did {
-		t.Errorf("Error: %s", err)
+		t.Errorf("Should never error. Error: %s", err)
 	}
 
-	lRes, ok := res.Result.(*list.List)
+	lRes, ok := res.Result.([]any)
 
-	if !ok {
-		t.Errorf("SHould be a list but isn't")
-	}
-
-	if lRes.Len() != 4 {
+	if len(lRes) != 4 {
 		t.Errorf("list length should be 4")
 	}
 
-	for v := lRes.Front(); v != nil  ; v = v.Next() {
-		r := v.Value.(rune)
-		if r != 'a' {
-			t.Errorf("Expected: %s, found: %s", "a", string(r))
-		} 
+	expected := []int32{'a', 'a', 'a', 'a'}
+	if !reflect.DeepEqual(lRes, expected) {
+		t.Errorf("Saw: %v", res.Result)
+		t.Errorf("Expected: %v, got %v", expected, lRes)
 	}
 
 	in = &TestInput{
@@ -448,19 +449,19 @@ func TestMany0(t *testing.T) {
 		t.Errorf("Error: %s", err)
 	}
 
-	lRes, ok = res.Result.(*list.List)
+	lRes2, ok := res.Result.([]rune)
 
 	if !ok {
-		t.Errorf("SHould be a list but isn't")
+		t.Errorf("SHould be a slice but isn't")
 	}
 
-	if lRes.Len() != 0 {
+	if len(lRes2) != 0 {
 		t.Errorf("list length should be 0")
 	}
 
 }
 
-func TestMany1 (t *testing.T) {
+func TestMany1(t *testing.T) {
 	in := &TestInput{
 		in: []rune{'a', 'a', 'a', 'a', 'o', 'g', 'h', 'k'},
 	}
@@ -483,11 +484,11 @@ func TestMany1 (t *testing.T) {
 		t.Errorf("list length should be 4")
 	}
 
-	for v := lRes.Front(); v != nil  ; v = v.Next() {
+	for v := lRes.Front(); v != nil; v = v.Next() {
 		r := v.Value.(rune)
 		if r != 'a' {
 			t.Errorf("Expected: %s, found: %s", "a", string(r))
-		} 
+		}
 	}
 
 }

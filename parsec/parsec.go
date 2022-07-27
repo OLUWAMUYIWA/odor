@@ -40,6 +40,10 @@ type PResult struct {
 	Err    error
 }
 
+type Result interface {
+	fmt.Stringer
+}
+
 func (r *PResult) Errored() (error, bool) {
 	return r.Err, r.Err != nil
 }
@@ -91,7 +95,6 @@ func Tag(r rune) Parsec {
 	}
 }
 
-
 // IsNot is the complete opposite of IsA. It returns the `not(r rune)` that it finds next. If it finds `r`, it fails
 func IsNot(r rune) Parsec {
 	return func(in ParserInput) PResult {
@@ -126,7 +129,7 @@ func CharUTF8() Parsec {
 	}
 }
 
-// OneOf returns a perser which checks if the next rune matches one of any given tunes. 
+// OneOf returns a perser which checks if the next rune matches one of any given tunes.
 // returns a rune
 func OneOf(any []rune) Parsec {
 	return func(in ParserInput) PResult {
@@ -246,7 +249,6 @@ func TakeN(n int) Parsec {
 	}
 }
 
-
 // returns a string of length n in byte count
 func StrN(n int) Parsec {
 	return func(in ParserInput) PResult {
@@ -296,8 +298,7 @@ func StrN(n int) Parsec {
 	}
 }
 
-
-// TakeTill eats runes until a Predicate is satisfied. 
+// TakeTill eats runes until a Predicate is satisfied.
 //It must take at least one rune for it to be successful
 // returns a list of runes
 func TakeTill(f Predicate) Parsec {
@@ -357,8 +358,8 @@ func TakeTillIncl(f Predicate) Parsec {
 		if err, didErr := res.Errored(); didErr { // the worker parser returned error
 			return PResult{
 				Result: nil,
-				Rem: in,
-				Err: err,
+				Rem:    in,
+				Err:    err,
 			}
 		}
 		// next Car() should be the rune that astisfies the f predicate
@@ -551,7 +552,6 @@ func Preceded(match, pre string) Parsec {
 	}
 }
 
-
 // Number asks if it can obtain a contiguous set of digits from the input stream
 // result is an integer
 func Number() Parsec {
@@ -570,16 +570,16 @@ func Number() Parsec {
 		digs := OneOf(numbers)
 		rem := in
 		var e error
-		pref, neg := false, false
+		checked, neg := false, false
 		for !rem.Empty() {
-			//first check if the first rune is a '-', then itll be negative
-			if !pref  {
+			//first check if the first rune is a '-', then it'll be negative
+			if !checked {
 				res := Tag('-')(rem)
-				if res.Err != nil {
+				if res.Err == nil {
 					neg = true
 				}
 				rem = res.Rem
-				pref = true
+				checked = true
 
 			} else {
 				res := digs(rem)
@@ -616,8 +616,6 @@ func Number() Parsec {
 		}
 	}
 }
-
-
 
 // Chars asks if a stream of input matches the characters in the rune slice provided
 // if it doesn't, the entire input is returned unchanged, but with a nil Result
@@ -671,8 +669,6 @@ func Str(str string) Parsec {
 	}
 }
 
-
-
 // Many0 will drive as many reps of a parser as possible, incl. zero. At the first failure of the parser, it returns without erroring
 // result is a slice of results of the parser being repeated
 func (p Parsec) Many0() Parsec {
@@ -682,12 +678,9 @@ func (p Parsec) Many0() Parsec {
 		for !res.Rem.Empty() {
 			out := p(res.Rem)
 			if out.Err != nil {
-				// still retains the complete input, but returns a nil error even if te parser eats nnothing
-				return PResult{
-					Result: nil,
-					Rem: in,
-					Err: nil,
-				}
+				// still returns a nil error even if the parser eats nothing
+				//
+				return res
 			}
 			resSlice = append(resSlice, out.Result)
 			res.Result = resSlice
@@ -748,7 +741,7 @@ func (p Parsec) Count(n int) Parsec {
 
 // Then joins two parsers. It discards the result of the first one.
 // If the first one suceeds, it calls the second one. If it doesn't it returns an error
-// To use `Then`, 
+// To use `Then`,
 func (p Parsec) Then(sec Parsec) Parsec {
 	return func(in ParserInput) PResult {
 		res := p(in)
@@ -789,13 +782,13 @@ func (p Parsec) ThenDiscard(sec Parsec) Parsec {
 	}
 }
 
-// AndThen joins n parsers. 
+// AndThen joins n parsers.
 // If the first one suceeds, it calls the next one. If it doesn't it returns an error
 // result is a list of the results of each parser
 func (p Parsec) AndThen(secs []Parsec) Parsec {
 	return func(in ParserInput) PResult {
 		rem := in
-		slice := make([]any, 0) // has to be a slice of any type, because we do not know the types of the results of the parsers inputed 
+		slice := make([]any, 0) // has to be a slice of any type, because we do not know the types of the results of the parsers inputed
 		result := PResult{slice, rem, nil}
 		out := p(rem)
 		if out.Rem.Empty() {
@@ -835,11 +828,11 @@ func Alt(ps ...Parsec) Parsec {
 	return func(in ParserInput) PResult {
 		rem := in
 		if rem.Empty() {
-				return PResult{
-					nil,
-					in,
-					IncompleteErr(),
-				}
+			return PResult{
+				nil,
+				in,
+				IncompleteErr(),
+			}
 		}
 		for _, p := range ps {
 			res := p(rem)
@@ -856,7 +849,6 @@ func Alt(ps ...Parsec) Parsec {
 	}
 }
 
-
 // Guarded uses `Tag` `TakeTillIncl` to take a list of runes that fill up the space between `left` and `right`
 //  result is a lst of runes
 func Guarded(left, right rune) Parsec {
@@ -869,7 +861,7 @@ func Guarded(left, right rune) Parsec {
 	}
 }
 
-// GuardedWhile takes two runes as left and right guards, a predicate to specify the conditions each rune 
+// GuardedWhile takes two runes as left and right guards, a predicate to specify the conditions each rune
 // between the left and the right runes must satisfy
 //  the `left` and `right` runes are not parts of the results. they are discarded
 // since the internal mechanism of `GuardedWhile` uses `TakeWhile`, the result returned is a slice of runes
@@ -881,15 +873,15 @@ func GuardedWhile(left, right rune, p Predicate) Parsec {
 		if err, didErr := res.Errored(); didErr {
 			return PResult{
 				Result: nil,
-				Rem: in,
-				Err: err.(*ParsecErr),
+				Rem:    in,
+				Err:    err.(*ParsecErr),
 			}
 		}
 		if res.Rem.Empty() {
 			return PResult{
 				Result: nil,
-				Rem: in,
-				Err: IncompleteErr(),
+				Rem:    in,
+				Err:    IncompleteErr(),
 			}
 		}
 		result := res.Result
@@ -898,24 +890,20 @@ func GuardedWhile(left, right rune, p Predicate) Parsec {
 		if err, didErr := res2.Errored(); didErr {
 			return PResult{
 				Result: nil,
-				Rem: in,
-				Err: err.(*ParsecErr),
+				Rem:    in,
+				Err:    err.(*ParsecErr),
 			}
 		}
 
 		return PResult{
 			Result: result,
-			Rem: res.Rem,
-			Err: nil,
+			Rem:    res.Rem,
+			Err:    nil,
 		}
 	}
 }
 
-
-
-
 type Callback func(any, Parsec) PResult
-
 
 func FoldMany0[T any](p Parsec, init func() T, accFunc func(res, curr T) T) Parsec {
 	return func(in ParserInput) PResult {
