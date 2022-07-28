@@ -736,5 +736,123 @@ func TestAndThen(t *testing.T) {
 }
 
 func TestAlt(t *testing.T) {
+	first := Str("abc")
+	second := OneOf([]rune{'e', 'a', 'o'})
+	third := Tag('9')
 
+	type test[T any] struct {
+		input *TestInput
+		want  T
+	}
+
+	test1 := test[string]{input: &TestInput{in: []rune{'a', 'b', 'c', '6', '9', '5', 'u'}}, want: "abc"}
+	test2 := test[rune]{input: &TestInput{in: []rune{'a', 'b', 'c', '4', '5'}}, want: 'a'}
+	test3 := test[rune]{input: &TestInput{in: []rune{'1', 'x'}}}
+
+	parser := Alt(first, second, third)
+
+	res1 := parser(test1.input)
+	result1, ok := res1.Result.(string)
+	if !ok {
+		t.Errorf("Result should be string. the string parser should be chosen, but i isnt: %s", reflect.TypeOf(res1.Result))
+	}
+	if result1 != test1.want {
+		t.Errorf("should be abc but is '%s'", result1)
+	}
+	exptdrem1 := &TestInput{in: []rune{'6', '9', '5', 'u'}}
+	if !reflect.DeepEqual(exptdrem1, res1.Rem.(*TestInput)) {
+		t.Errorf("expected %s to remain but remained %s", exptdrem1, res1.Rem.(*TestInput))
+	}
+
+	// changed the order to allow the second to go first
+	parser2 := Alt(second, first, third)
+	res2 := parser2(test2.input)
+	result2, ok := res2.Result.(rune)
+	if !ok {
+		t.Errorf("Result should be rune. the string parser should be chosen, but i isnt: %s", reflect.TypeOf(res2.Result))
+	}
+	if result2 != test2.want {
+		t.Errorf("should be %d but is '%d'", test2.want, result2)
+	}
+
+	res3 := parser(test3.input)
+	if _, did := res3.Errored(); !did {
+		t.Errorf("should have errored but didnt")
+	}
+	if res3.Result != nil {
+		t.Errorf("parser should have nil result as none of the parsers matched")
+	}
+	if !reflect.DeepEqual(test3.input, res3.Rem.(*TestInput)) {
+		t.Errorf("full remainder should remain")
+	}
+}
+
+func TestGuarded(t *testing.T) {
+	l, r := 'a', 'z'
+	g := Guarded(l, r)
+
+	type test struct {
+		input  *TestInput
+		wanted *list.List
+		rem    *TestInput
+	}
+
+	l1 := list.New()
+	l1.PushBack('b')
+	l1.PushBack('c')
+	l1.PushBack('d')
+	l2 := list.New()
+	l2.PushBack('2')
+	tests := []test{
+		{input: &TestInput{in: []rune{'a', 'b', 'c', 'd', 'z'}}, wanted: l1, rem: &TestInput{in: []rune{}}},
+		{input: &TestInput{in: []rune{'a', '2', 'z', 'z', 'z'}}, wanted: l2, rem: &TestInput{in: []rune{'z', 'z'}}},
+	}
+
+	for _, tt := range tests {
+		res := g(tt.input)
+		if err, did := res.Errored(); did {
+			t.Errorf("should not have errored but did: %s", err)
+		}
+		if !reflect.DeepEqual(res.Rem.(*TestInput), tt.rem) {
+			t.Errorf("remainder not correct")
+		}
+		if !reflect.DeepEqual(tt.wanted, res.Result.(*list.List)) {
+			t.Errorf("Wrong result")
+		}
+	}
+
+	sectest := test{
+		input: &TestInput{in: []rune{'f', 'c'}}, rem: &TestInput{[]rune{'f', 'c'}}, wanted: nil,
+	}
+	ressec := g(sectest.input)
+	if err, did := ressec.Errored(); !did { // redundant
+		t.Errorf("should have errored")
+		if !errors.Is(UnmatchedErr(), err) {
+			t.Errorf("error should be unmatched but is %s", err.Error())
+		}
+	}
+
+	if ressec.Result != nil {
+		t.Errorf("result should be nil")
+	}
+
+	terttest := test{
+		input: &TestInput{in: []rune{'a', 'f', 'c'}}, rem: &TestInput{[]rune{'a', 'f', 'c'}}, wanted: nil,
+	}
+	restert := g(terttest.input)
+	if err, did := restert.Errored(); !did { // redundant
+		t.Errorf("should have errored")
+		if !errors.Is(UnmatchedErr(), err) {
+			t.Errorf("error should be unmatched but is %s", err.Error())
+		}
+	}
+
+	if restert.Result != nil {
+		t.Errorf("result should be nil")
+	}
+
+	if !reflect.DeepEqual(restert.Rem.(*TestInput), terttest.rem) {
+		t.Errorf("stream should not have been consumed")
+
+	}
 }
