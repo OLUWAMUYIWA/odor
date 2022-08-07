@@ -311,13 +311,11 @@ func TakeTill(f Predicate) Parsec {
 				IncompleteErr(),
 			}
 		}
-
 		rem := in
 		res := list.New()
 		curr := rem.Car()
-
 		for !rem.Empty() {
-
+			// we found the sentinel
 			if f(curr) { //if the predicate returns true, we're done
 				if res.Len() == 0 { //we gained nothing from the parser
 					return PResult{
@@ -336,13 +334,15 @@ func TakeTill(f Predicate) Parsec {
 
 			res.PushBack(curr)
 			rem = rem.Cdr()
-			curr = rem.Car()
+			if !rem.Empty() {
+				curr = rem.Car()
+			}
 		}
-
+		// we never found the sentinel
 		return PResult{
-			res,
-			rem,
 			nil,
+			in,
+			UnmatchedErr(),
 		}
 	}
 }
@@ -745,7 +745,8 @@ func (p Parsec) Count(n int) Parsec {
 func (p Parsec) Then(sec Parsec) Parsec {
 	return func(in ParserInput) PResult {
 		res := p(in)
-		if res.Err != nil { //first parser failed or there's no input left
+		//first parser failed or there's no input left
+		if res.Err != nil {
 			return PResult{nil, in, UnmatchedErr()}
 		}
 		if res.Rem.Empty() {
@@ -873,6 +874,7 @@ func Guarded(left, right rune) Parsec {
 func GuardedWhile(left, right rune, p Predicate) Parsec {
 	return func(in ParserInput) PResult {
 		pre := Tag(left)
+
 		parser := pre.Then(TakeWhile(p))
 		res := parser(in)
 		if err, didErr := res.Errored(); didErr {
@@ -902,7 +904,7 @@ func GuardedWhile(left, right rune, p Predicate) Parsec {
 
 		return PResult{
 			Result: result,
-			Rem:    res.Rem,
+			Rem:    res2.Rem,
 			Err:    nil,
 		}
 	}

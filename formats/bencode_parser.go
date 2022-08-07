@@ -95,7 +95,22 @@ func BencInt() parsec.Parsec {
 	return func(in parsec.ParserInput) parsec.PResult {
 		res := guardedInt(in)
 		// the internal TaeWhile used to implement GuardedWhile returns a slice of runes as result
-		digits := res.Result.([]rune)
+		// l := res.Result.(*list.List)
+		// var digits []rune
+		// for e := l.Front(); e != nil; e = e.Next() {
+		// 	digits = append(digits, e.Value.(rune))
+		// }
+		digits, ok := res.Result.([]rune)
+		if !ok {
+			return parsec.PResult{
+				Result: nil,
+				Rem:    in,
+				Err:    parsec.UnmatchedErr(),
+			}
+		}
+		if _, did := res.Errored(); did {
+			return res
+		}
 		num, _ := strconv.ParseInt(string(digits), 10, 0)
 		res.Result = num
 		return res

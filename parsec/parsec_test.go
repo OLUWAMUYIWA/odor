@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"errors"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode"
@@ -235,6 +236,10 @@ func TestTakeTill(t *testing.T) {
 		}
 		i++
 	}
+
+	// in2 := &TestInput{
+	// 	in: []rune{'a', 'b', 'c', 'd', 'e', 'f'},
+	// }
 }
 
 func TestTakeWhile(t *testing.T) {
@@ -855,4 +860,67 @@ func TestGuarded(t *testing.T) {
 		t.Errorf("stream should not have been consumed")
 
 	}
+}
+
+func TestGuardedWhile(t *testing.T) {
+	l, r := 'i', 'e'
+	p := GuardedWhile(l, r, func(r rune) bool { return unicode.IsDigit(r) })
+
+	type test struct {
+		input  *TestInput
+		wanted []rune
+		rem    *TestInput
+	}
+	s1 := []rune{'1', '2', '3'}
+	tests := []test{
+		{input: &TestInput{in: []rune{'i', '1', '2', '3', 'e'}}, wanted: s1, rem: &TestInput{in: []rune{}}},
+		{input: &TestInput{in: []rune{'i', '2', '2', 'c', 'c'}}, wanted: nil, rem: &TestInput{in: []rune{'i', '2', '2', 'c', 'c'}}},
+		{input: &TestInput{in: []rune{'a', '2', '2', 'c', 'c'}}, wanted: nil, rem: &TestInput{in: []rune{'a', '2', '2', 'c', 'c'}}},
+	}
+	res := p(tests[0].input)
+	if err, did := res.Errored(); did {
+		t.Errorf("should not have errored but did: %s", err)
+	}
+	if !reflect.DeepEqual(tests[0].wanted, res.Result.([]rune)) {
+		t.Errorf("Wrong result")
+	}
+	if !reflect.DeepEqual(res.Rem.(*TestInput), tests[0].rem) {
+		t.Errorf("remainder not correct. expected: %v. Got %v", tests[0].rem, res.Rem.(*TestInput))
+	}
+
+	// li := res.Result.(*list.List)
+	// var digits []rune
+	// for e := li.Front(); e != nil; e = e.Next() {
+	// 	digits = append(digits, e.Value.(rune))
+	// }
+	digits := res.Result.([]rune)
+	num, _ := strconv.ParseInt(string(digits), 10, 0)
+	if num != 123 {
+		t.Errorf("Should be %d, but is %d\n", 123, num)
+	}
+
+	// second part. the failures
+	for i := 1; i < len(tests); i++ {
+		tt := tests[i]
+		res := p(tt.input)
+		if _, did := res.Errored(); !did {
+			t.Errorf("should have errored but did")
+		}
+		if !reflect.DeepEqual(res.Rem.(*TestInput), tt.rem) {
+			t.Errorf("remainder not correct. should have full remainder: %v, but has: %v", tt.rem, res.Rem.(*TestInput))
+		}
+		if !reflect.DeepEqual(nil, res.Result) {
+			t.Errorf("Wrong result. result should be empty but is: %v", res.Result.([]rune))
+		}
+	}
+}
+
+// to be yesyed later
+
+func TestFoldMany0(t *testing.T) {
+
+}
+
+func TestFoldMany1(t *testing.T) {
+
 }
