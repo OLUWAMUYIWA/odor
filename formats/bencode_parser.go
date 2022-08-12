@@ -13,39 +13,47 @@ import (
 )
 
 type BencInput struct {
-	r *bufio.Reader
+	R *bufio.Reader
 }
 
 func NewBencInput(r io.Reader) *BencInput {
 	return &BencInput{
-		r: bufio.NewReader(r),
+		R: bufio.NewReader(r),
 	}
 }
 
 // basically a peek but returned. the input must not be changed after a Car
 func (b *BencInput) Car() rune {
-	r, _, _ := b.r.ReadRune()
-	b.r.UnreadRune()
+	// s, _ := b.r.Peek(1)
+	// r := s[0]
+	r, _, _ := b.R.ReadRune()
+	b.R.UnreadRune()
 	return r
 }
 
 // read what was last read+unread by Car and drop
 func (b *BencInput) Cdr() parsec.ParserInput {
-	_, _, _ = b.r.ReadRune()
+	b.R.ReadRune()
 	return b
 }
 
 // we say that any error here is due to EOF, but that's unsound. There
 // might be an error while interpreting the rune. //comeback
 func (b *BencInput) Empty() bool {
-	_, _, e := b.r.ReadRune()
+	_, _, e := b.R.ReadRune()
 
 	if e != nil {
-		return false
+		return true
 	}
 
-	b.r.UnreadRune()
-	return true
+	b.R.UnreadRune()
+	return false
+}
+
+// only used for debugging
+func (b BencInput) String() string {
+	s, _ := b.R.ReadString('0')
+	return s
 }
 
 func BencStr() parsec.Parsec {
@@ -89,9 +97,8 @@ func BencStr() parsec.Parsec {
 }
 
 func BencInt() parsec.Parsec {
-	guardedInt := parsec.GuardedWhile('i', 'e', func(r rune) bool {
-		return unicode.IsDigit(r)
-	})
+	l, r := 'i', 'e'
+	guardedInt := parsec.GuardedWhile(l, r, func(r rune) bool { return unicode.IsDigit(r) })
 	return func(in parsec.ParserInput) parsec.PResult {
 		res := guardedInt(in)
 		// the internal TaeWhile used to implement GuardedWhile returns a slice of runes as result
@@ -112,7 +119,7 @@ func BencInt() parsec.Parsec {
 			return res
 		}
 		num, _ := strconv.ParseInt(string(digits), 10, 0)
-		res.Result = num
+		res.Result = int(num)
 		return res
 	}
 }
