@@ -23,19 +23,25 @@ func TestBencInt(t *testing.T) {
 	if num != nres {
 		t.Errorf("Error: %s", res.Err)
 		t.Errorf("Expcted: %d. Got: %d", num, res.Result.(int))
+		t.Errorf("Wrong result\n")
 	}
 	rem := &BencInput{
 		R: bufio.NewReader(bytes.NewBuffer([]byte{'v', 's'})),
 	}
-	actualRem := res.Rem.(*BencInput)
+	actualRem, ok := res.Rem.(*BencInput)
+	if !ok {
+		t.Errorf("Not the type we expected")
+	}
 	if !reflect.DeepEqual(actualRem, rem) {
 		t.Errorf("Type: expeced: %s\n", reflect.TypeOf(rem))
 		t.Errorf("Type gotten: %s\n", reflect.TypeOf(actualRem))
 		t.Errorf("Rem incorrect: should be: %s, but is: %s", rem, actualRem)
-		for !actualRem.Empty() {
-			t.Errorf("Expect: %s. Got:%s\n", b.Car())
-			b = b.Cdr().(*BencInput)
+		for i :=0; i < 2; i++ {
+			t.Errorf("Expect: %d. Got: %d\n", actualRem.Car(), rem.Car())
+			rem = rem.Cdr().(*BencInput)
+			actualRem = actualRem.Cdr().(*BencInput)
 		}
+		t.Errorf("got here\n")
 	}
 }
 

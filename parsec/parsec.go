@@ -16,23 +16,23 @@ import (
 //Parsec is a basic parser function. It takes an imput and returns PResult as Result.
 type Parsec func(in ParserInput) PResult
 
-//Predicate is a function that takes a rune and performs some computation, returning a true/false result
+//Predicate is a function that takes a byte and performs some computation, returning a true/false result
 //this result is useful when the predicate is used a a function argument is a higher order function.
-//a true result proves that the rune in question satisfies a particular condition
-type Predicate func(r rune) bool
+//a true result proves that the byte in question satisfies a particular condition
+type Predicate func(r byte) bool
 
 //ParserInput specifies two methods.
-//The method `Car` returns the next rune in the stream.. an implememter only needs return the first item in its list when Car is called
+//The method `Car` returns the next byte in the stream.. an implememter only needs return the first item in its list when Car is called
 //Cdr OTOH, while also not changing the internal state of the implementer, returns another copy of the implementer
 //without the first part. It works like a `Lisp`
 type ParserInput interface {
-	Car() rune        //when it is called, it returns the current rune without advancing the index
+	Car() byte        //when it is called, it returns the current byte without advancing the index
 	Cdr() ParserInput //returns the remainder of the input after the first one has been removed
 	Empty() bool
 }
 
 //PResult contains two fields. `result` contains the result of the parser. `rem` contains the remaining imput
-//if the parser succeeds then `rem` is the remainder of the input after the `matched` runes have been moved out of it
+//if the parser succeeds then `rem` is the remainder of the input after the `matched` bytes have been moved out of it
 //if the parser fails, the rem contains the input unchanged
 type PResult struct {
 	Result interface{}
@@ -77,9 +77,9 @@ var (
 )
 
 ////////SIMPLE PARSERS
-// Tag is the simplest parser, it checks if a rune matches the next rune in the input.
+// Tag is the simplest parser, it checks if a byte matches the next rune in the input.
 
-func Tag(r rune) Parsec {
+func Tag(r byte) Parsec {
 	return func(in ParserInput) PResult {
 		if in.Empty() {
 			return PResult{nil, in, IncompleteErr()}
@@ -96,7 +96,7 @@ func Tag(r rune) Parsec {
 }
 
 // IsNot is the complete opposite of IsA. It returns the `not(r rune)` that it finds next. If it finds `r`, it fails
-func IsNot(r rune) Parsec {
+func IsNot(r byte) Parsec {
 	return func(in ParserInput) PResult {
 		if in.Empty() {
 			return PResult{nil, in, IncompleteErr()}
@@ -110,28 +110,38 @@ func IsNot(r rune) Parsec {
 	}
 }
 
-// CharUTF8 returns a parser which checks if this rune is a valid utf-8 character. thhis character could be any utf-8 symbol
+// CharUTF8 returns a parser which checks if this byte is a valid utf-8 character. thhis character could be any utf-8 symbol
+// comeback to implement for > len 1 chars
 func CharUTF8() Parsec {
 	return func(in ParserInput) PResult {
 		if in.Empty() {
 			return PResult{nil, in, IncompleteErr()}
 		}
+		rem := in
+		curr := rem.Car()
 
-		curr := in.Car()
-
-		if utf8.ValidRune(curr) {
+		if utf8.ValidRune(rune(curr)) {
 			return PResult{
-				curr, in.Cdr(), nil,
+				curr, rem.Cdr(), nil,
 			}
+		} else {
+			// comeback
+			// b := []byte{curr,}
+			// for i := 0; i < 2; i++ {
+			// 	curr = rem.Car()
+			// 	in = rem.Cdr()
+
+			// }
+
 		}
 
 		return PResult{nil, in, UnmatchedErr()}
 	}
 }
 
-// OneOf returns a perser which checks if the next rune matches one of any given tunes.
+// OneOf returns a perser which checks if the next byte matches one of any given tunes.
 // returns a rune
-func OneOf(any []rune) Parsec {
+func OneOf(any []byte) Parsec {
 	return func(in ParserInput) PResult {
 		if in.Empty() {
 			return PResult{nil, in, IncompleteErr()}
@@ -167,7 +177,7 @@ func Digit() Parsec {
 		curr := in.Car()
 
 		//if curr is a unicode number
-		if utf8.ValidRune(curr) && unicode.IsDigit(curr) {
+		if utf8.ValidRune(rune(curr)) && unicode.IsDigit(rune(curr)) {
 			return PResult{
 				int(curr - '0'), in.Cdr(), nil,
 			}
@@ -179,6 +189,7 @@ func Digit() Parsec {
 }
 
 // Letter checks if the nexxt rune from the rune stream is a valid utf-8 letter
+// comebac for len > 1
 func Letter() Parsec {
 	return func(in ParserInput) PResult {
 		if in.Empty() {
@@ -186,12 +197,14 @@ func Letter() Parsec {
 		}
 
 		curr := in.Car()
-		if utf8.ValidRune(curr) && unicode.IsLetter(curr) {
+		if utf8.ValidRune(rune(curr)) && unicode.IsLetter(rune(curr)) {
 			return PResult{
 				curr,
 				in.Cdr(),
 				nil,
 			}
+		} else {
+
 		}
 		return PResult{
 			nil,
@@ -250,6 +263,7 @@ func TakeN(n int) Parsec {
 }
 
 // returns a string of length n in byte count
+// comeback for len > 1
 func StrN(n int) Parsec {
 	return func(in ParserInput) PResult {
 
@@ -276,7 +290,7 @@ func StrN(n int) Parsec {
 			//there's more, and we haven't reached our target number
 			curr := rem.Car()
 
-			if !utf8.ValidRune(curr) {
+			if !utf8.ValidRune(rune(curr)) {
 				return PResult{
 					nil,
 					in,
@@ -284,7 +298,7 @@ func StrN(n int) Parsec {
 				}
 			}
 			rem = rem.Cdr()
-			currnum, _ := res.WriteRune(curr)
+			currnum, _ := res.WriteRune(rune(curr))
 			num += currnum
 			if num >= n { // we have reached the specific length on bytes we need
 				// comeback: what if num exceeds n?
@@ -383,7 +397,7 @@ func TakeWhile(f Predicate) Parsec {
 		}
 
 		rem := in
-		res := []rune{}
+		res := []byte{}
 		curr := rem.Car()
 		for !rem.Empty() && f(curr) {
 			res = append(res, curr)
@@ -424,12 +438,12 @@ func Terminated(match, post string) Parsec {
 		}
 
 		rem := in
-		matchRunes, postRunes := []rune(match), []rune(post) //create rune slices from the strings
+		matchBytes, postBytes := []byte(match), []byte(post) //create byte slices from the strings
 
 		//we need two loops, one for the first string, the second for the other.
 		//If we fail anywhere in running through the two loops, we fail out immediately
 
-		for _, r := range matchRunes {
+		for _, r := range matchBytes {
 
 			if rem.Empty() { //input empties without us eating all the runes we want
 				return PResult{
@@ -453,7 +467,7 @@ func Terminated(match, post string) Parsec {
 		}
 
 		//second loop
-		for _, r := range postRunes {
+		for _, r := range postBytes {
 
 			if rem.Empty() { //input empties without us eating all the runes we want
 				return PResult{
@@ -497,12 +511,12 @@ func Preceded(match, pre string) Parsec {
 			}
 		}
 		rem := in
-		matchRunes, preRunes := []rune(match), []rune(pre) //create rune slices from the strings
+		matchBytes, preBytes := []byte(match), []byte(pre) //create rune slices from the strings
 
 		//first loop, for the `pre` argument
-		for _, r := range preRunes {
+		for _, r := range preBytes {
 
-			if rem.Empty() { //input empties without us eating all the runes we want
+			if rem.Empty() { //input empties without us eating all the Bytes we want
 				return PResult{
 					nil,
 					in,
@@ -522,7 +536,7 @@ func Preceded(match, pre string) Parsec {
 		}
 
 		//second loop, for the `match` argument
-		for _, r := range matchRunes {
+		for _, r := range matchBytes {
 
 			if rem.Empty() { //input empties without us eating all the runes we want
 				return PResult{
@@ -566,7 +580,7 @@ func Number() Parsec {
 		}
 
 		var numStr strings.Builder
-		numbers := []rune{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'}
+		numbers := []byte{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'}
 		digs := OneOf(numbers)
 		rem := in
 		var e error
@@ -619,7 +633,7 @@ func Number() Parsec {
 
 // Chars asks if a stream of input matches the characters in the rune slice provided
 // if it doesn't, the entire input is returned unchanged, but with a nil Result
-func Chars(chars []rune) Parsec {
+func Chars(chars []byte) Parsec {
 	return func(in ParserInput) PResult {
 
 		if in.Empty() {
@@ -647,7 +661,7 @@ func Chars(chars []rune) Parsec {
 func Str(str string) Parsec {
 	return func(in ParserInput) PResult {
 		if utf8.ValidString(str) {
-			res := Chars([]rune(str))(in)
+			res := Chars([]byte(str))(in)
 			// v := reflect.ValueOf(res)
 
 			if chars, ok := res.Result.([]rune); ok {
@@ -857,10 +871,10 @@ func Alt(ps ...Parsec) Parsec {
 
 // Guarded uses `Tag` `TakeTillIncl` to take a list of runes that fill up the space between `left` and `right`
 //  result is a lst of runes
-func Guarded(left, right rune) Parsec {
+func Guarded(left, right byte) Parsec {
 	return func(in ParserInput) PResult {
 		pre := Tag(left)
-		p := pre.Then(TakeTillIncl(func(r rune) bool {
+		p := pre.Then(TakeTillIncl(func(r byte) bool {
 			return r == right
 		}))
 		return p(in)
@@ -871,7 +885,7 @@ func Guarded(left, right rune) Parsec {
 // between the left and the right runes must satisfy
 //  the `left` and `right` runes are not parts of the results. they are discarded
 // since the internal mechanism of `GuardedWhile` uses `TakeWhile`, the result returned is a slice of runes
-func GuardedWhile(left, right rune, p Predicate) Parsec {
+func GuardedWhile(left, right byte, p Predicate) Parsec {
 	return func(in ParserInput) PResult {
 		pre := Tag(left)
 

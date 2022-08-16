@@ -11,10 +11,10 @@ import (
 )
 
 type TestInput struct {
-	in []rune
+	in []byte
 }
 
-func (i *TestInput) Car() rune {
+func (i *TestInput) Car() byte {
 	return (*i).in[0]
 }
 
@@ -32,7 +32,7 @@ func (i *TestInput) String() string {
 	var s strings.Builder
 
 	for _, r := range i.in {
-		s.WriteRune(r)
+		s.WriteByte(r)
 	}
 
 	return s.String()
@@ -40,47 +40,47 @@ func (i *TestInput) String() string {
 
 func TestTag(t *testing.T) {
 	var inTable []*TestInput = []*TestInput{
-		{[]rune{'a', 'b', 'c'}},
-		{[]rune{'d', 'e', 'f'}},
+		{[]byte{'a', 'b', 'c'}},
+		{[]byte{'d', 'e', 'f'}},
 	}
 
-	expected := []rune{'a', 'd'}
+	expected := []byte{'a', 'd'}
 
 	for i, r := range expected {
 		res := Tag(r)(inTable[i])
-		resR := res.Result.(rune)
+		resR := res.Result.(byte)
 		if resR != r {
-			t.Errorf("Tag isn't popping the right rune \n")
+			t.Errorf("Tag isn't popping the right byte \n")
 		}
 		inTable[i] = res.Rem.(*TestInput)
 	}
 
-	if !reflect.DeepEqual(*inTable[0], TestInput{[]rune{'b', 'c'}}) {
-		t.Errorf("Remander is not correct: %s instead of: %s \n", inTable[0], &TestInput{[]rune{'b', 'c'}})
+	if !reflect.DeepEqual(*inTable[0], TestInput{[]byte{'b', 'c'}}) {
+		t.Errorf("Remander is not correct: %s instead of: %s \n", inTable[0], &TestInput{[]byte{'b', 'c'}})
 	}
 
-	if !reflect.DeepEqual(*inTable[1], TestInput{[]rune{'e', 'f'}}) {
-		t.Errorf("Remander is not correct: %s instead of %s \n", inTable[1], &TestInput{[]rune{'e', 'f'}})
+	if !reflect.DeepEqual(*inTable[1], TestInput{[]byte{'e', 'f'}}) {
+		t.Errorf("Remander is not correct: %s instead of %s \n", inTable[1], &TestInput{[]byte{'e', 'f'}})
 	}
 
 }
 
 func TestIsNot(t *testing.T) {
 	var inTable []*TestInput = []*TestInput{
-		{[]rune{'a', 'b', 'c'}},
-		{[]rune{'d', 'e', 'f'}},
+		{[]byte{'a', 'b', 'c'}},
+		{[]byte{'d', 'e', 'f'}},
 	}
 
-	runes := []rune{'b', 'e'}
+	bytes := []byte{'b', 'e'}
 
-	for i, r := range runes {
+	for i, r := range bytes {
 		res := IsNot(r)(inTable[i])
-		resR := res.Result.(rune)
+		resR := res.Result.(byte)
 		if res.Err != nil {
 			t.Errorf("Errored: %s", res.Err)
 		}
 		if resR == r {
-			t.Errorf("IsNot matches the said rune: %v instead of not doing so %v\n", resR, r)
+			t.Errorf("IsNot matches the said byte: %v instead of not doing so %v\n", resR, r)
 		}
 	}
 }
@@ -88,7 +88,7 @@ func TestIsNot(t *testing.T) {
 func TestCharUTF8(t *testing.T) {
 	//these guys ar invalid utf-8s, they should fail
 	nonUTF8s := &TestInput{
-		in: []rune("pythön!"),
+		in: []byte("pythön!"),
 	}
 
 	for !nonUTF8s.Empty() {
@@ -103,7 +103,7 @@ func TestCharUTF8(t *testing.T) {
 	}
 
 	nonUTF8s = &TestInput{
-		in: []rune{0xe228a1, 0xe28228},
+		in: []byte{0xe, 0xe},
 	}
 
 	res := CharUTF8()(nonUTF8s)
@@ -118,10 +118,10 @@ func TestCharUTF8(t *testing.T) {
 
 func TestOneOf(t *testing.T) {
 	in := TestInput{
-		in: []rune{'d', 'e', 'f'},
+		in: []byte{'d', 'e', 'f'},
 	}
 
-	any := []rune{'d', 'a', 'b', 'c'}
+	any := []byte{'d', 'a', 'b', 'c'}
 
 	res := OneOf(any)(&in)
 
@@ -133,14 +133,14 @@ func TestOneOf(t *testing.T) {
 		t.Errorf("should not be equal beacuse it got reduced")
 	}
 
-	if !reflect.DeepEqual(TestInput{in: []rune{'e', 'f'}}, *(res.Rem.(*TestInput))) {
+	if !reflect.DeepEqual(TestInput{in: []byte{'e', 'f'}}, *(res.Rem.(*TestInput))) {
 		t.Errorf("should  be equal beacuse it got reduced")
 	}
 }
 
 func TestDigit(t *testing.T) {
 	in := &TestInput{
-		in: []rune{'1', '2', '3', '4', '5', 'g'},
+		in: []byte{'1', '2', '3', '4', '5', 'g'},
 	}
 	dig := Digit()
 	expected := []int{1, 2, 3, 4, 5}
@@ -156,7 +156,7 @@ func TestDigit(t *testing.T) {
 
 func TestIsEmpty(t *testing.T) {
 	in := &TestInput{
-		in: []rune{},
+		in: []byte{},
 	}
 
 	res := IsNot('a')(in)
@@ -177,20 +177,20 @@ func TestIsEmpty(t *testing.T) {
 
 func TestLetter(t *testing.T) {
 	in := &TestInput{
-		in: []rune{'a', 'b', 'c'},
+		in: []byte{'a', 'b', 'c'},
 	}
 
 	let := Letter()
 
 	res := let(in)
-	if r := res.Result.(rune); !unicode.IsLetter(r) {
+	if r := res.Result.(byte); !unicode.IsLetter(rune(r)) {
 		t.Errorf("Wrong!")
 	}
 }
 
 func TestTakeN(t *testing.T) {
 	in := &TestInput{
-		in: []rune{'a', 'b', 'c', 'd', 'e', 'f'},
+		in: []byte{'a', 'b', 'c', 'd', 'e', 'f'},
 	}
 
 	take := TakeN(5)
@@ -204,7 +204,7 @@ func TestTakeN(t *testing.T) {
 	}
 	i := 0
 	for e := valRes.Front(); e != nil; e = e.Next() {
-		if val := e.Value.(rune); val != (*in).in[i] {
+		if val := e.Value.(byte); val != (*in).in[i] {
 			t.Errorf("Expected: %d, got: %d", (*in).in[i], val)
 		}
 		i++
@@ -213,10 +213,10 @@ func TestTakeN(t *testing.T) {
 
 func TestTakeTill(t *testing.T) {
 	in := &TestInput{
-		in: []rune{'a', 'b', 'c', 'd', 'e', 'f'},
+		in: []byte{'a', 'b', 'c', 'd', 'e', 'f'},
 	}
 
-	var f Predicate = func(r rune) bool {
+	var f Predicate = func(r byte) bool {
 		return r == 'e'
 	}
 
@@ -231,23 +231,23 @@ func TestTakeTill(t *testing.T) {
 	}
 	i := 0
 	for e := resList.Front(); e != nil; e = e.Next() {
-		if v := e.Value.(rune); v != (*in).in[i] {
-			t.Errorf("Not the runes we expected")
+		if v := e.Value.(byte); v != (*in).in[i] {
+			t.Errorf("Not the bytes we expected")
 		}
 		i++
 	}
 
 	// in2 := &TestInput{
-	// 	in: []rune{'a', 'b', 'c', 'd', 'e', 'f'},
+	// 	in: []byte{'a', 'b', 'c', 'd', 'e', 'f'},
 	// }
 }
 
 func TestTakeWhile(t *testing.T) {
 	in := &TestInput{
-		in: []rune{'a', 'b', 'c', 'd', 'e', 'f', 'h', 'k'},
+		in: []byte{'a', 'b', 'c', 'd', 'e', 'f', 'h', 'k'},
 	}
 
-	var f Predicate = func(r rune) bool {
+	var f Predicate = func(r byte) bool {
 		return r <= 'e'
 	}
 
@@ -260,16 +260,16 @@ func TestTakeWhile(t *testing.T) {
 	if len(resList) != 5 {
 		t.Errorf("Should be 5")
 	}
-	expexted := []rune{'a', 'b', 'c', 'd', 'e'}
+	expexted := []byte{'a', 'b', 'c', 'd', 'e'}
 	if !reflect.DeepEqual(resList, expexted) {
-		t.Errorf("Not the runes we expected: %v VS %v", resList, expexted)
+		t.Errorf("Not the bytes we expected: %v VS %v", resList, expexted)
 	}
 
 }
 
 func TestTerminated(t *testing.T) {
 	in := &TestInput{
-		in: []rune{'c', 'a', 't', 'd', 'o', 'g', 'h', 'k'},
+		in: []byte{'c', 'a', 't', 'd', 'o', 'g', 'h', 'k'},
 	}
 	match := "cat"
 	parser := Terminated(match, "dog")
@@ -284,7 +284,7 @@ func TestTerminated(t *testing.T) {
 	}
 
 	in = &TestInput{
-		in: []rune{'c', 'a', 't', 'd', 'o', 'g', 'h', 'k'},
+		in: []byte{'c', 'a', 't', 'd', 'o', 'g', 'h', 'k'},
 	}
 
 	match = "cats"
@@ -302,7 +302,7 @@ func TestTerminated(t *testing.T) {
 
 func TestPreceded(t *testing.T) {
 	in := &TestInput{
-		in: []rune{'c', 'a', 't', 'd', 'o', 'g', 'h', 'k'},
+		in: []byte{'c', 'a', 't', 'd', 'o', 'g', 'h', 'k'},
 	}
 	match := "dog"
 	pre := "cat"
@@ -318,7 +318,7 @@ func TestPreceded(t *testing.T) {
 	}
 
 	in = &TestInput{
-		in: []rune{'c', 'a', 't', 'd', 'o', 'g', 'h', 'k'},
+		in: []byte{'c', 'a', 't', 'd', 'o', 'g', 'h', 'k'},
 	}
 
 	match = "dogs"
@@ -336,7 +336,7 @@ func TestPreceded(t *testing.T) {
 
 func TestNumber(t *testing.T) {
 	in := &TestInput{
-		in: []rune{'2', '5', '6', 'd', 'o', 'g', 'h', 'k'},
+		in: []byte{'2', '5', '6', 'd', 'o', 'g', 'h', 'k'},
 	}
 	expexted := 256
 	res := Number()(in)
@@ -353,7 +353,7 @@ func TestNumber(t *testing.T) {
 	}
 
 	in2 := &TestInput{
-		in: []rune{'-', '2', '5', '6', 'd', 'o', 'g', 'h', 'k'},
+		in: []byte{'-', '2', '5', '6', 'd', 'o', 'g', 'h', 'k'},
 	}
 	expextedNeg := -256
 	res2 := Number()(in2)
@@ -372,15 +372,15 @@ func TestNumber(t *testing.T) {
 
 func TestChars(t *testing.T) {
 	in := &TestInput{
-		in: []rune{'2', '5', '6', 'd', 'o', 'g', 'h', 'k'},
+		in: []byte{'2', '5', '6', 'd', 'o', 'g', 'h', 'k'},
 	}
 
-	chars := Chars([]rune{'2', '5', '6', 'd'})
+	chars := Chars([]byte{'2', '5', '6', 'd'})
 
 	res := chars(in)
 
-	expected := []rune{'2', '5', '6', 'd'}
-	result := res.Result.([]rune)
+	expected := []byte{'2', '5', '6', 'd'}
+	result := res.Result.([]byte)
 	if e, did := res.Errored(); did {
 		t.Errorf("Error: %s", e)
 	}
@@ -396,7 +396,7 @@ func TestStr(t *testing.T) {
 	str := "abeg"
 
 	in := &TestInput{
-		in: []rune{'a', 'b', 'e', 'g', 'o', 'g', 'h', 'k'},
+		in: []byte{'a', 'b', 'e', 'g', 'o', 'g', 'h', 'k'},
 	}
 
 	strParsec := Str(str)
@@ -419,7 +419,7 @@ func TestStr(t *testing.T) {
 func TestMany0(t *testing.T) {
 
 	in := &TestInput{
-		in: []rune{'a', 'a', 'a', 'a', 'o', 'g', 'h', 'k'},
+		in: []byte{'a', 'a', 'a', 'a', 'o', 'g', 'h', 'k'},
 	}
 
 	isA := Tag('a')
@@ -448,7 +448,7 @@ func TestMany0(t *testing.T) {
 	// }
 
 	in = &TestInput{
-		in: []rune{'a', 'a', 'a', 'a', 'o', 'g', 'h', 'k'},
+		in: []byte{'a', 'a', 'a', 'a', 'o', 'g', 'h', 'k'},
 	}
 
 	isA = Tag('b')
@@ -473,7 +473,7 @@ func TestMany0(t *testing.T) {
 
 func TestMany1(t *testing.T) {
 	in := &TestInput{
-		in: []rune{'a', 'a', 'a', 'a', 'o', 'g', 'h', 'k'},
+		in: []byte{'a', 'a', 'a', 'a', 'o', 'g', 'h', 'k'},
 	}
 
 	isA := Tag('a')
@@ -495,7 +495,7 @@ func TestMany1(t *testing.T) {
 	}
 
 	for v := lRes.Front(); v != nil; v = v.Next() {
-		r := v.Value.(rune)
+		r := v.Value.(byte)
 		if r != 'a' {
 			t.Errorf("Expected: %s, found: %s", "a", string(r))
 		}
@@ -503,7 +503,7 @@ func TestMany1(t *testing.T) {
 
 	// part2
 	in = &TestInput{
-		in: []rune{'a', 'a', 'a', 'a', 'o', 'g', 'h', 'k'},
+		in: []byte{'a', 'a', 'a', 'a', 'o', 'g', 'h', 'k'},
 	}
 
 	isA = Tag('b')
@@ -528,7 +528,7 @@ func TestMany1(t *testing.T) {
 
 func TestCount(t *testing.T) {
 	in := &TestInput{
-		in: []rune{'a', 'a', 'a', 'a', 'a', 'o', 'g', 'h', 'k'},
+		in: []byte{'a', 'a', 'a', 'a', 'a', 'o', 'g', 'h', 'k'},
 	}
 
 	isA := Tag('a')
@@ -551,7 +551,7 @@ func TestCount(t *testing.T) {
 	}
 
 	for v := lRes.Front(); v != nil; v = v.Next() {
-		r := v.Value.(rune)
+		r := v.Value.(byte)
 		if r != 'a' {
 			t.Errorf("Expected: %s, found: %s", "a", string(r))
 		}
@@ -578,7 +578,7 @@ func TestCount(t *testing.T) {
 	}
 
 	for v := lRes2.Front(); v != nil; v = v.Next() {
-		r := v.Value.(rune)
+		r := v.Value.(byte)
 		if r != 'a' {
 			t.Errorf("Expected: %s, found: %s", "a", string(r))
 		}
@@ -589,7 +589,7 @@ func TestCount2(t *testing.T) {
 
 	// pass 3
 	in3 := &TestInput{
-		in: []rune{'a', 'a', 'a', 'a', 'a', 'o', 'g', 'h', 'k'},
+		in: []byte{'a', 'a', 'a', 'a', 'a', 'o', 'g', 'h', 'k'},
 	}
 	count3 := Tag('a').Count(10)
 
@@ -614,12 +614,12 @@ func TestThen(t *testing.T) {
 		input *TestInput
 		want  int
 	}
-	pry := OneOf([]rune{'a', 'b', 'c', '4'})
+	pry := OneOf([]byte{'a', 'b', 'c', '4'})
 	sec := Digit()
 	tests := []test{
-		{input: &TestInput{in: []rune{'b', '6'}}, want: 6},
-		{input: &TestInput{in: []rune{'c', '9'}}, want: 9},
-		{input: &TestInput{in: []rune{'x', '1'}}, want: 0},
+		{input: &TestInput{in: []byte{'b', '6'}}, want: 6},
+		{input: &TestInput{in: []byte{'c', '9'}}, want: 9},
+		{input: &TestInput{in: []byte{'x', '1'}}, want: 0},
 	}
 	parser := pry.Then(sec)
 
@@ -648,12 +648,12 @@ func TestThenDiscard(t *testing.T) {
 		want  int
 	}
 	pry := Digit()
-	sec := OneOf([]rune{'4', 'a', 'b', 'c'})
+	sec := OneOf([]byte{'4', 'a', 'b', 'c'})
 
 	tests := []test{
-		{input: &TestInput{in: []rune{'6', 'b', '5', 'u'}}, want: 6},
-		{input: &TestInput{in: []rune{'9', 'c'}}, want: 9},
-		{input: &TestInput{in: []rune{'1', 'x'}}, want: 0},
+		{input: &TestInput{in: []byte{'6', 'b', '5', 'u'}}, want: 6},
+		{input: &TestInput{in: []byte{'9', 'c'}}, want: 9},
+		{input: &TestInput{in: []byte{'1', 'x'}}, want: 0},
 	}
 	parser := pry.ThenDiscard(sec)
 
@@ -679,8 +679,8 @@ func TestThenDiscard(t *testing.T) {
 func TestAndThen(t *testing.T) {
 	type wanted struct {
 		pre  string
-		mid  rune
-		post rune
+		mid  byte
+		post byte
 	}
 
 	type test struct {
@@ -689,13 +689,13 @@ func TestAndThen(t *testing.T) {
 	}
 
 	pry := Str("abc")
-	mid := OneOf([]rune{'4', 'a', 'b', 'c', '6'})
+	mid := OneOf([]byte{'4', 'a', 'b', 'c', '6'})
 	post := Tag('9')
 
 	tests := []test{
-		{input: &TestInput{in: []rune{'a', 'b', 'c', '6', '9', '5', 'u'}}, want: wanted{pre: "abc", mid: '6', post: '9'}},
-		{input: &TestInput{in: []rune{'a', 'b', 'c', '4', '5'}}, want: wanted{pre: "abc", mid: '4', post: '5'}},
-		{input: &TestInput{in: []rune{'1', 'x'}}, want: wanted{pre: "", mid: 0, post: 0}},
+		{input: &TestInput{in: []byte{'a', 'b', 'c', '6', '9', '5', 'u'}}, want: wanted{pre: "abc", mid: '6', post: '9'}},
+		{input: &TestInput{in: []byte{'a', 'b', 'c', '4', '5'}}, want: wanted{pre: "abc", mid: '4', post: '5'}},
+		{input: &TestInput{in: []byte{'1', 'x'}}, want: wanted{pre: "", mid: 0, post: 0}},
 	}
 	parser := pry.AndThen([]Parsec{mid, post})
 
@@ -720,8 +720,8 @@ func TestAndThen(t *testing.T) {
 			}
 
 			mid := pre.Next()
-			if r, ok := mid.Value.(rune); !ok {
-				t.Error("value shoule be rune")
+			if r, ok := mid.Value.(byte); !ok {
+				t.Error("value shoule be byte")
 			} else {
 				if r != tt.want.mid {
 					t.Errorf("Expected: %d, found: %d", tt.want.mid, r)
@@ -729,8 +729,8 @@ func TestAndThen(t *testing.T) {
 			}
 
 			post := mid.Next()
-			if r, ok := post.Value.(rune); !ok {
-				t.Error("value shoule be rune")
+			if r, ok := post.Value.(byte); !ok {
+				t.Error("value shoule be byte")
 			} else {
 				if r != tt.want.post {
 					t.Errorf("Expected: %d, found: %d", tt.want.post, r)
@@ -742,7 +742,7 @@ func TestAndThen(t *testing.T) {
 
 func TestAlt(t *testing.T) {
 	first := Str("abc")
-	second := OneOf([]rune{'e', 'a', 'o'})
+	second := OneOf([]byte{'e', 'a', 'o'})
 	third := Tag('9')
 
 	type test[T any] struct {
@@ -750,9 +750,9 @@ func TestAlt(t *testing.T) {
 		want  T
 	}
 
-	test1 := test[string]{input: &TestInput{in: []rune{'a', 'b', 'c', '6', '9', '5', 'u'}}, want: "abc"}
-	test2 := test[rune]{input: &TestInput{in: []rune{'a', 'b', 'c', '4', '5'}}, want: 'a'}
-	test3 := test[rune]{input: &TestInput{in: []rune{'1', 'x'}}}
+	test1 := test[string]{input: &TestInput{in: []byte{'a', 'b', 'c', '6', '9', '5', 'u'}}, want: "abc"}
+	test2 := test[byte]{input: &TestInput{in: []byte{'a', 'b', 'c', '4', '5'}}, want: 'a'}
+	test3 := test[byte]{input: &TestInput{in: []byte{'1', 'x'}}}
 
 	parser := Alt(first, second, third)
 
@@ -764,7 +764,7 @@ func TestAlt(t *testing.T) {
 	if result1 != test1.want {
 		t.Errorf("should be abc but is '%s'", result1)
 	}
-	exptdrem1 := &TestInput{in: []rune{'6', '9', '5', 'u'}}
+	exptdrem1 := &TestInput{in: []byte{'6', '9', '5', 'u'}}
 	if !reflect.DeepEqual(exptdrem1, res1.Rem.(*TestInput)) {
 		t.Errorf("expected %s to remain but remained %s", exptdrem1, res1.Rem.(*TestInput))
 	}
@@ -772,9 +772,9 @@ func TestAlt(t *testing.T) {
 	// changed the order to allow the second to go first
 	parser2 := Alt(second, first, third)
 	res2 := parser2(test2.input)
-	result2, ok := res2.Result.(rune)
+	result2, ok := res2.Result.(byte)
 	if !ok {
-		t.Errorf("Result should be rune. the string parser should be chosen, but i isnt: %s", reflect.TypeOf(res2.Result))
+		t.Errorf("Result should be byte. the string parser should be chosen, but i isnt: %s", reflect.TypeOf(res2.Result))
 	}
 	if result2 != test2.want {
 		t.Errorf("should be %d but is '%d'", test2.want, result2)
@@ -793,7 +793,7 @@ func TestAlt(t *testing.T) {
 }
 
 func TestGuarded(t *testing.T) {
-	l, r := 'a', 'z'
+	l, r := byte('a'), byte('z')
 	g := Guarded(l, r)
 
 	type test struct {
@@ -809,8 +809,8 @@ func TestGuarded(t *testing.T) {
 	l2 := list.New()
 	l2.PushBack('2')
 	tests := []test{
-		{input: &TestInput{in: []rune{'a', 'b', 'c', 'd', 'z'}}, wanted: l1, rem: &TestInput{in: []rune{}}},
-		{input: &TestInput{in: []rune{'a', '2', 'z', 'z', 'z'}}, wanted: l2, rem: &TestInput{in: []rune{'z', 'z'}}},
+		{input: &TestInput{in: []byte{'a', 'b', 'c', 'd', 'z'}}, wanted: l1, rem: &TestInput{in: []byte{}}},
+		{input: &TestInput{in: []byte{'a', '2', 'z', 'z', 'z'}}, wanted: l2, rem: &TestInput{in: []byte{'z', 'z'}}},
 	}
 
 	for _, tt := range tests {
@@ -827,7 +827,7 @@ func TestGuarded(t *testing.T) {
 	}
 
 	sectest := test{
-		input: &TestInput{in: []rune{'f', 'c'}}, rem: &TestInput{[]rune{'f', 'c'}}, wanted: nil,
+		input: &TestInput{in: []byte{'f', 'c'}}, rem: &TestInput{[]byte{'f', 'c'}}, wanted: nil,
 	}
 	ressec := g(sectest.input)
 	if err, did := ressec.Errored(); !did { // redundant
@@ -842,7 +842,7 @@ func TestGuarded(t *testing.T) {
 	}
 
 	terttest := test{
-		input: &TestInput{in: []rune{'a', 'f', 'c'}}, rem: &TestInput{[]rune{'a', 'f', 'c'}}, wanted: nil,
+		input: &TestInput{in: []byte{'a', 'f', 'c'}}, rem: &TestInput{[]byte{'a', 'f', 'c'}}, wanted: nil,
 	}
 	restert := g(terttest.input)
 	if err, did := restert.Errored(); !did { // redundant
@@ -863,25 +863,25 @@ func TestGuarded(t *testing.T) {
 }
 
 func TestGuardedWhile(t *testing.T) {
-	l, r := 'i', 'e'
-	p := GuardedWhile(l, r, func(r rune) bool { return unicode.IsDigit(r) })
+	l, r := byte('i'), byte('e')
+	p := GuardedWhile(l, r, func(r byte) bool { return unicode.IsDigit(rune(r)) })
 
 	type test struct {
 		input  *TestInput
-		wanted []rune
+		wanted []byte
 		rem    *TestInput
 	}
-	s1 := []rune{'1', '2', '3'}
+	s1 := []byte{'1', '2', '3'}
 	tests := []test{
-		{input: &TestInput{in: []rune{'i', '1', '2', '3', 'e'}}, wanted: s1, rem: &TestInput{in: []rune{}}},
-		{input: &TestInput{in: []rune{'i', '2', '2', 'c', 'c'}}, wanted: nil, rem: &TestInput{in: []rune{'i', '2', '2', 'c', 'c'}}},
-		{input: &TestInput{in: []rune{'a', '2', '2', 'c', 'c'}}, wanted: nil, rem: &TestInput{in: []rune{'a', '2', '2', 'c', 'c'}}},
+		{input: &TestInput{in: []byte{'i', '1', '2', '3', 'e'}}, wanted: s1, rem: &TestInput{in: []byte{}}},
+		{input: &TestInput{in: []byte{'i', '2', '2', 'c', 'c'}}, wanted: nil, rem: &TestInput{in: []byte{'i', '2', '2', 'c', 'c'}}},
+		{input: &TestInput{in: []byte{'a', '2', '2', 'c', 'c'}}, wanted: nil, rem: &TestInput{in: []byte{'a', '2', '2', 'c', 'c'}}},
 	}
 	res := p(tests[0].input)
 	if err, did := res.Errored(); did {
 		t.Errorf("should not have errored but did: %s", err)
 	}
-	if !reflect.DeepEqual(tests[0].wanted, res.Result.([]rune)) {
+	if !reflect.DeepEqual(tests[0].wanted, res.Result.([]byte)) {
 		t.Errorf("Wrong result")
 	}
 	if !reflect.DeepEqual(res.Rem.(*TestInput), tests[0].rem) {
@@ -889,11 +889,11 @@ func TestGuardedWhile(t *testing.T) {
 	}
 
 	// li := res.Result.(*list.List)
-	// var digits []rune
+	// var digits []byte
 	// for e := li.Front(); e != nil; e = e.Next() {
-	// 	digits = append(digits, e.Value.(rune))
+	// 	digits = append(digits, e.Value.(byte))
 	// }
-	digits := res.Result.([]rune)
+	digits := res.Result.([]byte)
 	num, _ := strconv.ParseInt(string(digits), 10, 0)
 	if num != 123 {
 		t.Errorf("Should be %d, but is %d\n", 123, num)
@@ -910,7 +910,7 @@ func TestGuardedWhile(t *testing.T) {
 			t.Errorf("remainder not correct. should have full remainder: %v, but has: %v", tt.rem, res.Rem.(*TestInput))
 		}
 		if !reflect.DeepEqual(nil, res.Result) {
-			t.Errorf("Wrong result. result should be empty but is: %v", res.Result.([]rune))
+			t.Errorf("Wrong result. result should be empty but is: %v", res.Result.([]byte))
 		}
 	}
 }

@@ -17,10 +17,10 @@ import (
 )
 
 type TestInput struct {
-	in []rune
+	in []byte
 }
 
-func (i *TestInput) Car() rune {
+func (i *TestInput) Car() byte {
 	return (*i).in[0]
 }
 
@@ -38,7 +38,7 @@ func (i *TestInput) String() string {
 	var s strings.Builder
 
 	for _, r := range i.in {
-		s.WriteRune(r)
+		s.WriteByte(r)
 	}
 
 	return s.String()
@@ -48,11 +48,11 @@ func main() {
 	fmt.Println("here")
 	for !b.Empty() {
 		fmt.Println("entered")
-		fmt.Println("%s", b.Car())
+		fmt.Println("%d", b.Car())
 		b = b.Cdr().(*formats.BencInput)
 	}
 	// g := parsec.Guarded('a', 'z')
-	// in := &TestInput{in: []rune{'a', 'f', 'c'}}
+	// in := &TestInput{in: []byte{'a', 'f', 'c'}}
 	// res := g(in)
 	// if err, did := res.Errored(); !did { // redundant
 	// 	if !errors.Is(parsec.UnmatchedErr(), err) {
@@ -64,13 +64,13 @@ func main() {
 	// 	fmt.Printf("result should be nil")
 	// }
 
-	// if !reflect.DeepEqual(res.Rem.(*TestInput), &TestInput{[]rune{'a', 'f', 'c'}}) {
+	// if !reflect.DeepEqual(res.Rem.(*TestInput), &TestInput{[]byte{'a', 'f', 'c'}}) {
 	// 	fmt.Printf("stream should not have been consumed")
 
 	// }
 
-	// in2 := &TestInput{in: []rune{'a', 'f', 'c'}}
-	// t := parsec.TakeTill(func(r rune) bool { return r == 'c' })
+	// in2 := &TestInput{in: []byte{'a', 'f', 'c'}}
+	// t := parsec.TakeTill(func(r byte) bool { return r == 'c' })
 	// res = t(in2)
 	// fmt.Println(res.Result)
 	// l, ok := res.Result.(*list.List)
@@ -78,7 +78,7 @@ func main() {
 	// 	fmt.Println("not a list")
 	// }
 	// for e := l.Front(); e != nil; e = e.Next() {
-	// 	fmt.Println(e.Value.(rune))
+	// 	fmt.Println(e.Value.(byte))
 	// }
 
 	// driver := newDriver()
