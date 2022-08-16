@@ -1,7 +1,6 @@
 //parsec is a mini parser combinator library
 //It does more than i need it to do for bencode parsing, but I decided to make it bigger than necessary because i wanted
 //to learn a little more about writing parser combinators and get more familiar with the functional style of programming in go
-
 package parsec
 
 import (
@@ -18,15 +17,16 @@ type Parsec func(in ParserInput) PResult
 
 //Predicate is a function that takes a byte and performs some computation, returning a true/false result
 //this result is useful when the predicate is used a a function argument is a higher order function.
-//a true result proves that the byte in question satisfies a particular condition
+//a true result proves that the byte in question satisfies a particular condition, our condition
 type Predicate func(r byte) bool
 
 //ParserInput specifies two methods.
-//The method `Car` returns the next byte in the stream.. an implememter only needs return the first item in its list when Car is called
+//The method `Car` returns the next byte in the stream.. an implememter only needs return the first item in its list
+// when Car is called
 //Cdr OTOH, while also not changing the internal state of the implementer, returns another copy of the implementer
 //without the first part. It works like a `Lisp`
 type ParserInput interface {
-	Car() byte        //when it is called, it returns the current byte without advancing the index
+	Car() byte        //when it is called, it returns the current byte without advancing the index, just like a peek
 	Cdr() ParserInput //returns the remainder of the input after the first one has been removed
 	Empty() bool
 }
@@ -45,7 +45,10 @@ type Result interface {
 }
 
 func (r *PResult) Errored() (error, bool) {
-	return r.Err, r.Err != nil
+	if r.Err != nil {
+		return r.Err, true
+	}
+	return nil, false
 }
 
 type ParsecErr struct {
@@ -72,21 +75,19 @@ func IncompleteErr() *ParsecErr {
 var (
 	Unmatched  *ParsecErr = &ParsecErr{context: "Parser Unmatched"}
 	Incomplete *ParsecErr = &ParsecErr{context: "There isn't enough data left for this parser"}
-
-	// PredicateFailed *ParsecErr = &ParsecErr{context: "The predicate failed without returning anything"}
 )
 
 ////////SIMPLE PARSERS
-// Tag is the simplest parser, it checks if a byte matches the next rune in the input.
+// Tag is the simplest parser, it checks if a byte matches the next byte in the input.
 
-func Tag(r byte) Parsec {
+func Tag(b byte) Parsec {
 	return func(in ParserInput) PResult {
 		if in.Empty() {
 			return PResult{nil, in, IncompleteErr()}
 		}
 
-		if r == in.Car() {
-			return PResult{r, in.Cdr(), nil}
+		if b == in.Car() {
+			return PResult{b, in.Cdr(), nil}
 		}
 
 		return PResult{
@@ -95,14 +96,21 @@ func Tag(r byte) Parsec {
 	}
 }
 
-// IsNot is the complete opposite of IsA. It returns the `not(r rune)` that it finds next. If it finds `r`, it fails
-func IsNot(r byte) Parsec {
+// comeback
+func TagRune(r rune) Parsec {
+	return func(in ParserInput) PResult {
+		return PResult{}
+	}
+}
+
+// IsNot is the complete opposite of IsA. It returns the `not(b byte)` that it finds next. If it finds `r`, it fails
+func IsNot(b byte) Parsec {
 	return func(in ParserInput) PResult {
 		if in.Empty() {
 			return PResult{nil, in, IncompleteErr()}
 		}
 
-		if r == in.Car() {
+		if b == in.Car() {
 			return PResult{nil, in, UnmatchedErr()}
 		}
 
@@ -140,7 +148,7 @@ func CharUTF8() Parsec {
 }
 
 // OneOf returns a perser which checks if the next byte matches one of any given tunes.
-// returns a rune
+// returns a byte
 func OneOf(any []byte) Parsec {
 	return func(in ParserInput) PResult {
 		if in.Empty() {
@@ -166,7 +174,7 @@ func OneOf(any []byte) Parsec {
 	}
 }
 
-// Digit takes only utf-8 encoded runes and ensures they are decimal digits (0-9). It returns a single digit
+// Digit takes only utf-8 encoded bytes and ensures they are decimal digits (0-9). It returns a single digit
 func Digit() Parsec {
 	return func(in ParserInput) PResult {
 
@@ -188,7 +196,7 @@ func Digit() Parsec {
 	}
 }
 
-// Letter checks if the nexxt rune from the rune stream is a valid utf-8 letter
+// Letter checks if the nexxt byte from the byte stream is a valid utf-8 letter
 // comebac for len > 1
 func Letter() Parsec {
 	return func(in ParserInput) PResult {
@@ -216,7 +224,7 @@ func Letter() Parsec {
 
 /////REPETITIONS
 
-//TakeN eats up `n` number of runes. if it doesnt get up to `n` number of runes, it fails. It retursn a list of runes as Result
+//TakeN eats up `n` number of bytes. if it doesnt get up to `n` number of bytes, it fails. It retursn a list of bytes as Result
 func TakeN(n int) Parsec {
 
 	return func(in ParserInput) PResult {
@@ -312,9 +320,9 @@ func StrN(n int) Parsec {
 	}
 }
 
-// TakeTill eats runes until a Predicate is satisfied.
+// TakeTill eats bytes until a Predicate is satisfied.
 //It must take at least one rune for it to be successful
-// returns a list of runes
+// returns a list of bytes
 func TakeTill(f Predicate) Parsec {
 	return func(in ParserInput) PResult {
 
@@ -363,7 +371,7 @@ func TakeTill(f Predicate) Parsec {
 
 // TakeTillIncl is same as TakeTill, but also eats up the byte that satisfies the predicate too
 // It doesn't include the last byte in the result, it just consumes it
-// It returns a list of runes too
+// It returns a list of bytes too
 func TakeTillIncl(f Predicate) Parsec {
 	return func(in ParserInput) PResult {
 
@@ -382,9 +390,9 @@ func TakeTillIncl(f Predicate) Parsec {
 	}
 }
 
-// TakeWhile keeps eating runes while Pedicate returns true.
+// TakeWhile keeps eating bytes while Pedicate returns true.
 // If no rune makes it into the results, `TakeWhile` returns an error
-// Returns a slice of runes.
+// Returns a slice of bytes.
 func TakeWhile(f Predicate) Parsec {
 
 	return func(in ParserInput) PResult {
@@ -422,7 +430,7 @@ func TakeWhile(f Predicate) Parsec {
 }
 
 // Terminated asks if the first argument `match` is `followed` immediately by the second one `post`
-// Terminated takes `strings` and not runes. This makes it quite easier to use with string-based protocols
+// Terminated takes `strings` and not bytes. This makes it quite easier to use with string-based protocols
 // The Result is the first one, the `match`, because `Termnated` assumes that that is the one we're interested in, and `post` is merely a delimeter.
 // It returns the original `match` string if it passes, or nil if it fails
 func Terminated(match, post string) Parsec {
@@ -445,7 +453,7 @@ func Terminated(match, post string) Parsec {
 
 		for _, r := range matchBytes {
 
-			if rem.Empty() { //input empties without us eating all the runes we want
+			if rem.Empty() { //input empties without us eating all the bytes we want
 				return PResult{
 					nil,
 					in,
@@ -469,7 +477,7 @@ func Terminated(match, post string) Parsec {
 		//second loop
 		for _, r := range postBytes {
 
-			if rem.Empty() { //input empties without us eating all the runes we want
+			if rem.Empty() { //input empties without us eating all the bytes we want
 				return PResult{
 					nil,
 					in,
@@ -511,7 +519,7 @@ func Preceded(match, pre string) Parsec {
 			}
 		}
 		rem := in
-		matchBytes, preBytes := []byte(match), []byte(pre) //create rune slices from the strings
+		matchBytes, preBytes := []byte(match), []byte(pre) //create byte slices from the strings
 
 		//first loop, for the `pre` argument
 		for _, r := range preBytes {
@@ -538,7 +546,7 @@ func Preceded(match, pre string) Parsec {
 		//second loop, for the `match` argument
 		for _, r := range matchBytes {
 
-			if rem.Empty() { //input empties without us eating all the runes we want
+			if rem.Empty() { //input empties without us eating all the bytes we want
 				return PResult{
 					nil,
 					in,
@@ -586,7 +594,7 @@ func Number() Parsec {
 		var e error
 		checked, neg := false, false
 		for !rem.Empty() {
-			//first check if the first rune is a '-', then it'll be negative
+			//first check if the first byte is a '-', then it'll be negative
 			if !checked {
 				res := Tag('-')(rem)
 				if res.Err == nil {
@@ -869,8 +877,8 @@ func Alt(ps ...Parsec) Parsec {
 	}
 }
 
-// Guarded uses `Tag` `TakeTillIncl` to take a list of runes that fill up the space between `left` and `right`
-//  result is a lst of runes
+// Guarded uses `Tag` `TakeTillIncl` to take a list of byes that fill up the space between `left` and `right`
+//  result is a lst of byes
 func Guarded(left, right byte) Parsec {
 	return func(in ParserInput) PResult {
 		pre := Tag(left)
@@ -881,10 +889,10 @@ func Guarded(left, right byte) Parsec {
 	}
 }
 
-// GuardedWhile takes two runes as left and right guards, a predicate to specify the conditions each rune
-// between the left and the right runes must satisfy
-//  the `left` and `right` runes are not parts of the results. they are discarded
-// since the internal mechanism of `GuardedWhile` uses `TakeWhile`, the result returned is a slice of runes
+// GuardedWhile takes two byes as left and right guards, a predicate to specify the conditions each rune
+// between the left and the right byes must satisfy
+//  the `left` and `right` byes are not parts of the results. they are discarded
+// since the internal mechanism of `GuardedWhile` uses `TakeWhile`, the result returned is a slice of bytes
 func GuardedWhile(left, right byte, p Predicate) Parsec {
 	return func(in ParserInput) PResult {
 		pre := Tag(left)
