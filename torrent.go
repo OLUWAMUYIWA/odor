@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha1"
+	"fmt"
 	"math/rand"
 	"os"
 	"time"
 
 	"sync"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/OLUWAMUYIWA/odor/formats"
 )
@@ -22,6 +25,11 @@ type Torrent struct {
 	name    string
 	mu      sync.Mutex
 	clients []*PeerConn // list of connections to peers this client is connected to
+	fPath   string      // path where to save the torrent
+}
+
+func (t *Torrent) pieceHashes() []formats.Sha1 {
+	return t.mInfo.Info.PiecesHash
 }
 
 var once sync.Once
@@ -40,9 +48,8 @@ func Init() {
 	once.Do(getPerID)
 }
 
-func NewTorrent(torrPath, fPath string) (*Torrent, error) {
+func NewTorrent(ctx context.Context, torrPath, fPath string) (*Torrent, error) {
 	var t Torrent
-	ctx := context.TODO()
 	// open torrent file
 	file, err := os.OpenFile(torrPath, os.O_RDONLY, 0)
 	if err != nil {
@@ -70,6 +77,8 @@ func NewTorrent(torrPath, fPath string) (*Torrent, error) {
 		return nil, err
 	}
 	t.peers = annResp.socks
+
+	t.fPath = fPath
 
 	return &t, nil
 
@@ -100,7 +109,63 @@ func (t *Torrent) Connect(ctx context.Context, addr PeerAddr) error {
 	}
 }
 
-func (t *Torrent) Start() error {
+type pieceReq struct {
+	index  int
+	sha    formats.Sha1
+	length int
+}
+
+type piece struct {
+	index int
+	buf   []byte
+}
+
+func (t *Torrent) downloadPiece(ctx context.Context, p PeerAddr, pReqChan chan *pieceReq, pChan chan *piece, errchan chan error) {
+
+}
+
+func (t *Torrent) Start(ctx context.Context) error {
+	// get the number of pieces
+	workersNum := len(t.pieceHashes())
+	reqChan := make(chan *pieceReq, workersNum)
+	pChan := make(chan *piece)
+	errChan := make(chan error)
+
+	// send all to the workers channel to be distributed among clients
+	for i, sha := range t.pieceHashes() {
+		pLen := t.mInfo.PieceLen(i)
+		reqChan <- &pieceReq{index: i, sha: sha, length: pLen}
+
+	}
+
+	for _, peer := range t.peers {
+		go t.downloadPiece(ctx, peer, reqChan, pChan, errChan)
+	}
+
+	f, err := os.OpenFile(t.fPath, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0666)
+	defer f.Close()
+	if err != nil {
+		return err
+	}
+
+	g := new(errgroup.Group)
+
+	for i := 0; i < len(t.pieceHashes()); i++ {
+		p := <-pChan
+		start, _ := t.mInfo.PieceBounds(p.index)
+		if len(p.buf) != t.mInfo.PieceLen(p.index) {
+			return fmt.Errorf("Incomplete piece")
+		}
+		g.Go(func() error {
+			_, err := f.WriteAt(p.buf, int64(start))
+			return err
+		})
+	}
+
+	wgErr := g.Wait()
+	if wgErr != nil {
+		return fmt.Errorf("Could not finish downloading because: %u", wgErr)
+	}
 
 	return nil
 }

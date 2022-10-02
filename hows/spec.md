@@ -3,6 +3,7 @@
 - Peer: Any agent participating in the download
 - Client: The user-agent that is the local macjine. The `client` is also a `peer`
 
+A block is a part of a piece that is requested via request (ID 6) and delivered via piece (ID 7)
 ## MetaInfo File
 - It is _**bencoded**_.
 - It is a _dictionary_.

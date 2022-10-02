@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 )
 
 type driver struct {
@@ -30,25 +32,29 @@ func (d *driver) Drive() error {
 	if len(os.Args) == 3 {
 		fPath = os.Args[2]
 	} else {
-		path, err := os.Getwd()
-		fPath = path
-		if err != nil {
-			s := "could not get working directory"
+		path, exists := os.LookupEnv("HOME")
+		if !exists {
+			s := "could not get home directory"
 			d.Println(s)
 			return fmt.Errorf(s)
 		}
-	}
+		path = filepath.Join(path, "Odor")
+		if err := os.MkdirAll(path, 0700); err != nil {
+			return err
+		}
 
-	t, err := NewTorrent(torrPath, fPath)
+	}
+	ctx := context.TODO()
+	t, err := NewTorrent(ctx, torrPath, fPath)
 	if err != nil {
 		d.Printf("%s\n", err.Error())
 		return err
 	}
-
-	if err := t.Start(); err != nil {
+	d.Println("Torrent download begins...")
+	if err := t.Start(ctx); err != nil {
 		d.Printf("%s\n", err.Error())
 		return err
 	}
-
+	d.Printf("Torrent %s save in directory: %s", t.name, t.fPath)
 	return nil
 }

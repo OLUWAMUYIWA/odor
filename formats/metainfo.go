@@ -74,7 +74,7 @@ func (m MetaInfo) Size() int {
 	return size
 }
 
-// PieceLen gets the length of a pice given its index
+// PieceLen gets the length of a piece given its index
 func (m MetaInfo) PieceLen(index int) int {
 	l := m.Size()
 	if l/m.Info.PieceLen == index { // is the index the last one?
@@ -84,7 +84,17 @@ func (m MetaInfo) PieceLen(index int) int {
 	}
 }
 
-// BlockLen gets the length of a specific block in an index, iven the piece index and block index
+func (m MetaInfo) PieceBounds(index int) (int, int) {
+	start := index * m.Info.PieceLen
+	// normally
+	end := start + m.Info.PieceLen
+	if end > m.Size() {
+		return start, m.Size()
+	}
+	return start, end
+}
+
+// BlockLen gets the length of a specific block in an index, given the piece index and block index
 func (m MetaInfo) BlockLen(pIndex, bIndex int) int {
 
 	pLen := m.PieceLen(pIndex) // piece length
