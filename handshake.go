@@ -20,13 +20,13 @@ const Null byte = 0
 // reserved: eight (8) reserved bytes. All current implementations use all zeroes.
 // peer_id: 20-byte string used as a unique ID for the client.
 
-type HandShake struct {
+type Shaker struct {
 	infoHash formats.Sha1 // 20-byte SHA1 hash of the info key from the metainfo file. generated from the `info` dictionary of the torrent file
 	peerId   [20]byte     // random 20 bytes generated to identify the client
 }
 
-func NewHandShake(infoHash, peerId [20]byte) *HandShake {
-	h := &HandShake{}
+func NewShaker(infoHash, peerId [20]byte) *Shaker {
+	h := &Shaker{}
 	h.infoHash = infoHash
 	h.peerId = peerId
 
@@ -34,7 +34,7 @@ func NewHandShake(infoHash, peerId [20]byte) *HandShake {
 }
 
 // Marshall marshalls an handshake object into a reader that can be read from
-func (h *HandShake) Marshall() io.Reader {
+func (h *Shaker) Marshall() io.Reader {
 	b := &bytes.Buffer{}
 	b.Grow(49) // the spec says It is (49+len(pstr)) bytes long.
 	// write pstr len
@@ -50,9 +50,9 @@ func (h *HandShake) Marshall() io.Reader {
 }
 
 // ParseHandShake parses an handshake from a stream of bytes
-func ParseHandShake(r io.Reader) (*HandShake, error) {
+func ParseHandShake(r io.Reader) (*Shaker, error) {
 	//pstrLen
-	var h *HandShake
+	var h *Shaker
 	var pstrLen uint8
 	if err := binary.Read(r, binary.BigEndian, pstrLen); err != nil {
 		return nil, err
@@ -75,7 +75,7 @@ func ParseHandShake(r io.Reader) (*HandShake, error) {
 	return h, nil
 }
 
-func verifyhandShake(req, resp *HandShake) bool {
+func verifyhandShake(req, resp *Shaker) bool {
 	var ok bool
 	if bytes.Compare(req.infoHash[:], resp.infoHash[:]) == 0 {
 		ok = true

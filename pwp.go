@@ -33,7 +33,7 @@ type PeerConn struct {
 	haves []int // if the peer does not use bitfield it must be using haves
 }
 
-// NewConn creates a tcp connection with a new per
+// NewConn creates a tcp connection with a new peer
 func NewConn(ctx context.Context, addr PeerAddr) (*PeerConn, error) {
 	cl := &PeerConn{}
 	a := net.JoinHostPort(addr.ipv4.String(), strconv.Itoa(int(addr.port)))
@@ -42,10 +42,11 @@ func NewConn(ctx context.Context, addr PeerAddr) (*PeerConn, error) {
 		return nil, err
 	}
 	cl.conn = conn
+	cl.addr = addr
 	return cl, nil
 }
 
-func (c *PeerConn) Shake(h *HandShake) error {
+func (c *PeerConn) Shake(h *Shaker) error {
 	// write the handshake to the connection
 	if _, err := io.Copy(c.conn, h.Marshall()); err != nil {
 		return err
@@ -78,7 +79,11 @@ func (c *PeerConn) ReqBitFields() error {
 	return nil
 }
 
-func (c *PeerConn) reqPiece(q Queue, p PiecesState) {
+func (c *PeerConn) HasPiece(i int) bool {
+	return c.b.Has(i)
+}
+
+func (c *PeerConn) ReqPiece(q Queue, p PiecesState) {
 	if q.chocked {
 		return
 	}
@@ -91,6 +96,30 @@ func (c *PeerConn) reqPiece(q Queue, p PiecesState) {
 			break
 		}
 	}
+}
+
+func (c *PeerConn) DownloadPiece(ctx context.Context, pReq *PieceReq) {
+	c.conn.SetDeadline(time.Now().Add(30 * time.Second))
+	defer c.conn.SetDeadline(time.Time{})
+
+	blocksDone := 0
+	for blocksDone < pReq.length {
+		if c.state != Chkd {
+		}
+	}
+}
+
+func (c *PeerConn) Unchoke() error {
+	unchoke := formats.NewUnchoke()
+	return unchoke.Marshall(c.conn)
+}
+func (c *PeerConn) Interested() error {
+	unchoke := formats.NewIntd()
+	return unchoke.Marshall(c.conn)
+}
+func (c *PeerConn) Uninterested() error {
+	unchoke := formats.NewUnIntd()
+	return unchoke.Marshall(c.conn)
 }
 
 func handleMsg(c net.Conn, msg formats.Msg) {

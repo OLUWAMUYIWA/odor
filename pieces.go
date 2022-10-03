@@ -50,8 +50,18 @@ func (p *PiecesState) assertRecvd(piece formats.PieceMsg) {
 	p.Recvd[int(piece.Index)].done[int(piece.Begin)/formats.BLOCK_LEN] = true
 }
 
+func (p *PiecesState) pieceDone(index int) bool {
+	pieceRcvd := p.Recvd[index]
+	for _, d := range pieceRcvd.done {
+		if !d {
+			return false
+		}
+	}
+	return true
+}
+
 // isDone checks if all blocks in all pieces have been received. returns a boolean indicatin the status
-func (p *PiecesState) isDone() bool {
+func (p PiecesState) isDone() bool {
 	for _, p := range p.Recvd {
 		for _, b := range p.done {
 			if !b {
