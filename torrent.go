@@ -109,9 +109,9 @@ func (t *Torrent) Connect(ctx context.Context, addr PeerAddr) (*PeerConn, error)
 }
 
 type PieceReq struct {
-	index  int
-	sha    formats.Sha1
-	length int
+	index int
+	sha   formats.Sha1
+	len   int
 }
 
 type Piece struct {
@@ -156,7 +156,7 @@ func (t *Torrent) Start(ctx context.Context) error {
 	// send all to the workers channel to be distributed among clients
 	for i, sha := range t.pieceHashes() {
 		pLen := t.mInfo.PieceLen(i)
-		reqChan <- &PieceReq{index: i, sha: sha, length: pLen}
+		reqChan <- &PieceReq{index: i, sha: sha, len: pLen}
 
 	}
 

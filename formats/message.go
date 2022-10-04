@@ -37,25 +37,27 @@ type Msg struct {
 func (m Msg) String() string {
 	switch m.ID {
 	case Choke:
-		return "Choke"
+		return "Choke {Id: 0}"
 	case Unchoke:
-		return "Unchoke"
+		return "Unchoke {Id: 1}"
 	case Interested:
-		return "Interested"
+		return "Interested {Id: 2}"
 	case Uninterested:
-		return "Uninterested"
+		return "Uninterested {Id: 3}"
 	case Have:
-		return ""
+		return "Have {Id: 4}"
 	case BitField:
-		return "BitField"
+		return "BitField {Id: 5}"
 	case Request:
-		return "Request"
+		return "Request {Id: 6}"
 	case Piece:
-		return "Piece"
+		return "Piece {Id: 7}"
 	case Cancel:
-		return "Cancel"
+		return "Cancel {Id: 8}"
 	case Port:
-		return "Port"
+		return "Port {Id: 9}"
+	case KepAlive:
+		return "KeepAlive"
 	default:
 		return "Unknown"
 	}
@@ -186,7 +188,7 @@ func (m *Msg) Marshall(w io.Writer) error {
 	return nil
 }
 
-func ParseMessage(r io.Reader) (*Msg, error) {
+func ReadMessage(r io.Reader) (*Msg, error) {
 	m := &Msg{}
 	lBuf := make([]byte, 4)
 	if _, err := io.ReadFull(r, lBuf); err != nil {

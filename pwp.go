@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
@@ -67,7 +68,7 @@ func (c *PeerConn) Shake(h *Shaker) error {
 func (c *PeerConn) ReqBitFields() error {
 	c.conn.SetDeadline(time.Now().Add(5 * time.Second))
 	defer c.conn.SetDeadline(time.Time{})
-	msg, err := formats.ParseMessage(c.conn)
+	msg, err := formats.ReadMessage(c.conn)
 	if err != nil {
 		return err
 	}
@@ -98,15 +99,35 @@ func (c *PeerConn) ReqPiece(q Queue, p PiecesState) {
 	}
 }
 
-func (c *PeerConn) DownloadPiece(ctx context.Context, pReq *PieceReq) {
+func (c *PeerConn) DownloadPiece(ctx context.Context, pReq *PieceReq, errchan chan error) {
 	c.conn.SetDeadline(time.Now().Add(30 * time.Second))
 	defer c.conn.SetDeadline(time.Time{})
 
-	blocksDone := 0
-	for blocksDone < pReq.length {
+	numReqsSent := 0
+	begin := 0
+	var blockLen int = formats.BLOCK_LEN
+	// request for all blocks
+	for numReqsSent < pReq.len && begin < pReq.len {
 		if c.state != Chkd {
+			// the last block is not bound to be same length as the first n blocks
+			if pReq.len-begin < formats.BLOCK_LEN {
+				blockLen = pReq.len - begin
+			}
+			if err := c.RequestBlock(ctx, pReq.index, begin, blockLen); err != nil {
+				errchan <- err
+				return
+			}
+			begin += blockLen
+			numReqsSent++
 		}
+		msg, err := formats.ReadMessage(c.conn)
+		if err != nil {
+			errchan <- err
+		}
+		err = c.handleMsg(msg)
+
 	}
+
 }
 
 func (c *PeerConn) Unchoke() error {
@@ -122,27 +143,51 @@ func (c *PeerConn) Uninterested() error {
 	return unchoke.Marshall(c.conn)
 }
 
-func handleMsg(c net.Conn, msg formats.Msg) {
+func (c *PeerConn) RequestBlock(ctx context.Context, index int, begin int, length int) error {
+	req := formats.NewRequest(formats.Ibl{Index: index, Begin: begin, Length: length})
+	return req.Marshall(c.conn)
+}
+
+func ParseMessage() {
+
+}
+
+func (c *PeerConn) handleMsg(msg *formats.Msg) error {
 	switch msg.ID {
 	case formats.Choke:
 		{
-			c.Close()
+			c.state = Chkd
+			return c.conn.Close()
 		}
 	case formats.Unchoke:
 		{
-
+			c.state = UnChkd
+			return nil
 		}
 	case formats.Have:
 		{
-
-		}
-	case formats.BitField:
-		{
-
+			if msg.ID != formats.Have {
+				return fmt.Errorf("Error parsing Have message, incorrect ID")
+			}
+			if len(msg.Payload) != 4 {
+				return fmt.Errorf("Payload length should be 4, but is: %d", len(msg.Payload))
+			}
+			i := binary.BigEndian.Uint32(msg.Payload)
+			c.b.Set(int(i))
+			return nil
 		}
 	case formats.Piece:
 		{
-
+			if msg.ID != formats.Piece {
+				return fmt.Errorf("Expected %s, got ID %d", formats.Piece, msg.ID)
+			}
+			return nil
+		}
+		// comeback
+	default:
+		{
+			return nil
 		}
 	}
+
 }
