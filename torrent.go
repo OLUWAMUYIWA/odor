@@ -96,12 +96,12 @@ func (t *Torrent) Connect(ctx context.Context, addr PeerAddr) (*PeerConn, error)
 			return nil, err
 		}
 
-		// et the pieces the peer has
+		// get the pieces the peer has
 		if err = cl.ReqBitFields(); err != nil {
 			return nil, err
 		}
 		// comeback to check state. suppose it begins with being choked and interested
-		cl.state = ChkdIntd
+		cl.state.connState = ChkdIntd
 		// now add the client to the client list
 		t.clients = append(t.clients, cl)
 		return cl, nil

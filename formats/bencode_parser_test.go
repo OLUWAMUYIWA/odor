@@ -7,6 +7,9 @@ import (
 	"testing"
 )
 
+// note: can't believe i struggled with this test. `reflect.DeepEqual` just kept testing negative for actual and expected
+// the reason, it turns out is that the two buffers, althoughhaving same contents had different lengths
+
 func TestBencInt(t *testing.T) {
 	var b *BencInput = &BencInput{
 		R: bufio.NewReader(bytes.NewBuffer([]byte{'i', '2', '2', '4', 'e', 'v', 's'})),
@@ -32,19 +35,16 @@ func TestBencInt(t *testing.T) {
 	if !ok {
 		t.Errorf("Not the type we expected")
 	}
-	if !reflect.DeepEqual(actualRem, rem) {
-		t.Errorf("Type: expeced: %s\n", reflect.TypeOf(rem))
-		t.Errorf("Type gotten: %s\n", reflect.TypeOf(actualRem))
-		t.Errorf("Rem incorrect: should be: %s, but is: %s", rem, actualRem)
-		for i :=0; i < 2; i++ {
-			t.Errorf("Expect: %d. Got: %d\n", actualRem.Car(), rem.Car())
-			rem = rem.Cdr().(*BencInput)
-			actualRem = actualRem.Cdr().(*BencInput)
+	for i := 0; i < 2; i++ {
+		a := actualRem.Car()
+		b := rem.Car()
+		if a != b {
+			t.Errorf("Should be eqal. Actual: %b, expected: %b", a, b)
 		}
-		t.Errorf("got here\n")
+		actualRem = actualRem.Cdr().(*BencInput)
+		rem = rem.Cdr().(*BencInput)
 	}
 }
-
 func TestBencStr(t *testing.T) {
 
 }

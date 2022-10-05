@@ -236,10 +236,6 @@ func TestTakeTill(t *testing.T) {
 		}
 		i++
 	}
-
-	// in2 := &TestInput{
-	// 	in: []byte{'a', 'b', 'c', 'd', 'e', 'f'},
-	// }
 }
 
 func TestTakeWhile(t *testing.T) {
@@ -255,7 +251,7 @@ func TestTakeWhile(t *testing.T) {
 
 	res := take(in)
 
-	resList := res.Result.([]int32)
+	resList := res.Result.([]byte)
 
 	if len(resList) != 5 {
 		t.Errorf("Should be 5")

@@ -26,6 +26,33 @@ const (
 	KepAlive
 )
 
+func (m MsgId) String() string {
+	switch m {
+	case Choke:
+		return "0"
+	case Unchoke:
+		return "1"
+	case Interested:
+		return "2"
+	case Uninterested:
+		return "3"
+	case Have:
+		return "4"
+	case BitField:
+		return "5"
+	case Request:
+		return "6"
+	case Piece:
+		return "7"
+	case Cancel:
+		return "8"
+	case Port:
+		return "9"
+	default:
+		return "10"
+	}
+}
+
 // Msg: All of the remaining messages in the protocol take the form of <length prefix><message ID><payload>
 type Msg struct {
 	Len     int
@@ -96,6 +123,7 @@ type Payload struct {
 	Index, Begin, Length uint32
 }
 
+// Marshall marshalls any constructed message into a writer. The type of message, specified by the `ID` determines how it is marshalled
 func (m *Msg) Marshall(w io.Writer) error {
 	switch m.ID {
 	case Choke | Unchoke | Interested | Uninterested: // <len=0001><id=x>
@@ -183,11 +211,14 @@ func (m *Msg) Marshall(w io.Writer) error {
 			if _, err := w.Write(bytes.Repeat([]byte{0}, 4)); err != nil {
 				return err
 			}
+			return nil
 		}
 	}
 	return nil
 }
 
+// ReadMessage reads from an `io.Reader`, usually a client connection, and puts the bytes into the generic `Msg` struct.
+// From `Msg` we can further parse into different message types
 func ReadMessage(r io.Reader) (*Msg, error) {
 	m := &Msg{}
 	lBuf := make([]byte, 4)
@@ -260,9 +291,23 @@ type Ibl struct {
 	Index, Begin, Length int
 }
 
+// NewRequest: creates a request for a block (part of a piece). Its twin is the Piece message
 func NewRequest(ibl Ibl) *Msg {
 	m := &Msg{}
 	m.ID = Request
+	m.Len = 13
+	payload := make([]byte, 12)
+	binary.BigEndian.PutUint32(payload[0:4], uint32(ibl.Index))
+	binary.BigEndian.PutUint32(payload[4:8], uint32(ibl.Begin))
+	binary.BigEndian.PutUint32(payload[8:12], uint32(ibl.Length))
+	m.Payload = payload
+	return m
+}
+
+// NewCancel: Cancel messages are generally only sent towards the end of a download, during what's called 'endgame mode'.
+func NewCancel(ibl Ibl) *Msg {
+	m := &Msg{}
+	m.ID = Cancel
 	m.Len = 13
 	payload := make([]byte, 12)
 	binary.BigEndian.PutUint32(payload[0:4], uint32(ibl.Index))
@@ -277,6 +322,23 @@ type PieceMsg struct {
 	Block        []byte
 }
 
+func ParsePieceMsg(msg *Msg) (PieceMsg, error) {
+	if msg.ID != Piece {
+		return PieceMsg{}, fmt.Errorf("Expected %s, got ID %d", Piece, msg.ID)
+	}
+	if len(msg.Payload) < 8 {
+		return PieceMsg{}, fmt.Errorf("Message content too short for Piece Message")
+	}
+	// first 4 bytes of the payload is for the index
+	index := binary.BigEndian.Uint32(msg.Payload[0:4])
+	// next four bytes is for the `begin`
+	begin := binary.BigEndian.Uint32(msg.Payload[4:8])
+	// the bytes itself take the remaining
+	buf := msg.Payload[8:]
+	return PieceMsg{Index: (index), Begin: begin, Block: buf}, nil
+}
+
+// NewPieceMMsg creates a new marshallable `Msg` from
 func NewPieceMMsg(p PieceMsg) *Msg {
 	m := &Msg{}
 	m.ID = Request
@@ -288,20 +350,3 @@ func NewPieceMMsg(p PieceMsg) *Msg {
 	m.Payload = payload
 	return m
 }
-
-// const connectionID uint64 = 0x41727101980
-
-// func buildConnReq() (io.Reader, error) {
-// 	var b bytes.Buffer
-// 	connIdBytes := []byte{}
-// 	binary.BigEndian.PutUint64(connIdBytes, connectionID)
-// 	n, err := b.Write(connIdBytes)
-// 	if err != nil || n != 8 {
-// 		return nil, err
-// 	}
-// 	b.Write([]byte{0, 0, 0, 0})
-// 	var random [4]byte
-// 	_, _ = rand.Read(random[:])
-// 	io.ReadFull(&b, random[:])
-// 	return &b, nil
-// }

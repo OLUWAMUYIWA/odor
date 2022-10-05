@@ -19,17 +19,22 @@ const (
 	UnChkd
 	Intd
 	UnIntd
-	ChkdIntd     = Chkd | Intd
-	ChkdUnIntd   = Chkd | UnIntd
-	UnChkdIntd   = UnChkd | Intd
-	UnchkdUnIntd = UnChkd | UnIntd
+	ChkdIntd     = Chkd & Intd
+	ChkdUnIntd   = Chkd & UnIntd
+	UnChkdIntd   = UnChkd & Intd
+	UnchkdUnIntd = UnChkd & UnIntd
 )
 
 // PeerConn represents a connection between our client and another peer
 type PeerConn struct {
 	conn  net.Conn
 	addr  PeerAddr
-	state ConnState
+	state struct {
+		connState   ConnState
+		index       int
+		numReqsSent int
+		buf         []byte
+	}
 	b     formats.Bitfield
 	haves []int // if the peer does not use bitfield it must be using haves
 }
@@ -80,7 +85,7 @@ func (c *PeerConn) ReqBitFields() error {
 	return nil
 }
 
-func (c *PeerConn) HasPiece(i int) bool {
+func (c PeerConn) HasPiece(i int) bool {
 	return c.b.Has(i)
 }
 
@@ -107,8 +112,9 @@ func (c *PeerConn) DownloadPiece(ctx context.Context, pReq *PieceReq, errchan ch
 	begin := 0
 	var blockLen int = formats.BLOCK_LEN
 	// request for all blocks
-	for numReqsSent < pReq.len && begin < pReq.len {
-		if c.state != Chkd {
+	for c.state.numReqsSent < pReq.len && begin < pReq.len {
+		// if client is both unchoked and interested
+		if c.state.connState == UnChkdIntd {
 			// the last block is not bound to be same length as the first n blocks
 			if pReq.len-begin < formats.BLOCK_LEN {
 				blockLen = pReq.len - begin
@@ -148,20 +154,16 @@ func (c *PeerConn) RequestBlock(ctx context.Context, index int, begin int, lengt
 	return req.Marshall(c.conn)
 }
 
-func ParseMessage() {
-
-}
-
 func (c *PeerConn) handleMsg(msg *formats.Msg) error {
 	switch msg.ID {
 	case formats.Choke:
 		{
-			c.state = Chkd
+			c.state.connState = Chkd
 			return c.conn.Close()
 		}
 	case formats.Unchoke:
 		{
-			c.state = UnChkd
+			c.state.connState = UnChkd
 			return nil
 		}
 	case formats.Have:
@@ -178,9 +180,11 @@ func (c *PeerConn) handleMsg(msg *formats.Msg) error {
 		}
 	case formats.Piece:
 		{
-			if msg.ID != formats.Piece {
-				return fmt.Errorf("Expected %s, got ID %d", formats.Piece, msg.ID)
+			_, err := formats.ParsePieceMsg(msg)
+			if err != nil {
+				return err
 			}
+
 			return nil
 		}
 		// comeback

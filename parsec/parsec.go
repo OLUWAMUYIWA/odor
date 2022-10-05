@@ -891,7 +891,7 @@ func Guarded(left, right byte) Parsec {
 
 // GuardedWhile takes two byes as left and right guards, a predicate to specify the conditions each rune
 // between the left and the right byes must satisfy
-//  the `left` and `right` byes are not parts of the results. they are discarded
+//  the `left` and `right` bytes are not parts of the results. they are discarded
 // since the internal mechanism of `GuardedWhile` uses `TakeWhile`, the result returned is a slice of bytes
 func GuardedWhile(left, right byte, p Predicate) Parsec {
 	return func(in ParserInput) PResult {
