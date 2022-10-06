@@ -46,6 +46,16 @@ func TestBencInt(t *testing.T) {
 	}
 }
 func TestBencStr(t *testing.T) {
+	var b *BencInput = &BencInput{
+		R: bufio.NewReader(bytes.NewBuffer([]byte{'4', ':', 's', 'p', 'a', 'm', '5'})),
+	}
+	getStr := BencStr()
+	// expected := "spam"
+	res := getStr(b)
+	t.Errorf("Result: %v", res.Result)
+	// if res.Result.(string) != expected {
+	// 	t.Errorf("Expected: %s, got %s", expected, res.Result.(string))
+	// }
 
 }
 

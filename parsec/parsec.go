@@ -72,9 +72,14 @@ func IncompleteErr() *ParsecErr {
 	return &ParsecErr{context: "There isn't enough data left for this parser"}
 }
 
+func ExceededErr() *ParsecErr {
+	return Exceeded
+}
+
 var (
 	Unmatched  *ParsecErr = &ParsecErr{context: "Parser Unmatched"}
 	Incomplete *ParsecErr = &ParsecErr{context: "There isn't enough data left for this parser"}
+	Exceeded   *ParsecErr = &ParsecErr{context: "sort of passed other tests but length more than we asked for, e.g in `StrN`"}
 )
 
 ////////SIMPLE PARSERS
@@ -298,18 +303,58 @@ func StrN(n int) Parsec {
 			//there's more, and we haven't reached our target number
 			curr := rem.Car()
 
+			// meaning one of two cases:
+			//1. the byte is valid utf8 but bigger than ascii, so we should check to know
+			//2. the byte is not valid utf-8
 			if !utf8.ValidRune(rune(curr)) {
-				return PResult{
-					nil,
-					in,
-					UnmatchedErr(),
+				if utf8.RuneStart(curr) {
+					r := []byte{}
+					r = append(r, curr)
+					var valid bool
+					for i := 0; i < 3; i++ { // utf-8 are encoded within 4 bytes. we have the first already.
+						currN := rem.Car()
+						remN := rem.Cdr()
+
+						r = append(r, currN)
+						if utf8.Valid(r) {
+							valid = true
+							res.Write(r)
+							num += len(r)
+							rem = remN
+							break
+						}
+					}
+					if !valid {
+						return PResult{
+							nil,
+							in,
+							UnmatchedErr(),
+						}
+					}
+
+				} else {
+					return PResult{
+						nil,
+						in,
+						UnmatchedErr(),
+					}
 				}
+
+			} else {
+				rem = rem.Cdr()
+				res.WriteByte(curr)
+				num++
 			}
-			rem = rem.Cdr()
-			currnum, _ := res.WriteRune(rune(curr))
-			num += currnum
+
 			if num >= n { // we have reached the specific length on bytes we need
 				// comeback: what if num exceeds n?
+				if num > n {
+					return PResult{
+						res.String(),
+						rem,
+						ExceededErr(),
+					}
+				}
 				return PResult{
 					res.String(),
 					rem,
@@ -670,9 +715,8 @@ func Str(str string) Parsec {
 	return func(in ParserInput) PResult {
 		if utf8.ValidString(str) {
 			res := Chars([]byte(str))(in)
-			// v := reflect.ValueOf(res)
 
-			if chars, ok := res.Result.([]rune); ok {
+			if chars, ok := res.Result.([]byte); ok {
 				return PResult{
 					string(chars),
 					res.Rem,

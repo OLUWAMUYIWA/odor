@@ -434,8 +434,8 @@ func TestMany0(t *testing.T) {
 
 	// expected := []int32{'a', 'a', 'a', 'a'}
 	for e := lRes.Front(); e != nil; e = e.Next() {
-		if !reflect.DeepEqual(e.Value, 'a') {
-			t.Errorf("Expected: %v, got %v", "a", e.Value)
+		if !reflect.DeepEqual(e.Value.(byte), byte('a')) {
+			t.Errorf("Expected: %v, got %v", uint('a'), e.Value)
 		}
 	}
 	// if !reflect.DeepEqual(lRes, expected) {
@@ -911,7 +911,41 @@ func TestGuardedWhile(t *testing.T) {
 	}
 }
 
-// to be yesyed later
+func TestStrN(t *testing.T) {
+
+	in := &TestInput{
+		in: []byte{'a', 'b', 'e', 'g', 'o', 'g', 'h', 'k'},
+	}
+
+	res := StrN(5)(in)
+	rem := res.Rem
+
+	if res.Result.(string) != "abego" {
+		t.Errorf("Should be %s, but i: %s", "abego", res.Result.(string))
+	}
+
+	remExp := &TestInput{
+		in: []byte{'g', 'h', 'k'},
+	}
+
+	for i := 0; i < 3; i++ {
+		a := rem.Car()
+		rem = rem.Cdr().(*TestInput)
+		b := remExp.Car()
+		remExp = remExp.Cdr().(*TestInput)
+		if a != b {
+			t.Errorf("Should be: %s, but is %s", string(b), string(a))
+		}
+	}
+
+	// failure
+	in = &TestInput{
+		in: []byte{'a', '4', 'e', 'g', 'o', 'g', 'h', 'k'},
+	}
+
+}
+
+// to be tested later
 
 func TestFoldMany0(t *testing.T) {
 
