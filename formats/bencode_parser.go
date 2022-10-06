@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"reflect"
 	"strconv"
 	"unicode"
@@ -63,7 +62,6 @@ func BencStr() parsec.Parsec {
 			}
 		}
 		numRes := parsec.Number()(rem)
-		fmt.Fprintf(os.Stdout, "Num: %d", numRes.Result.(int))
 		if err, didErr := numRes.Errored(); didErr {
 			return parsec.PResult{Result: nil, Rem: in, Err: err.(*(parsec.ParsecErr))}
 		}

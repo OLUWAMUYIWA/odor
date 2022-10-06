@@ -6,7 +6,6 @@ package parsec
 import (
 	"container/list"
 	"fmt"
-	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -190,7 +189,7 @@ func Digit() Parsec {
 		curr := in.Car()
 
 		//if curr is a unicode number
-		if utf8.ValidRune(rune(curr)) && unicode.IsDigit(rune(curr)) {
+		if unicode.IsDigit(rune(curr)) { // && utf8.ValidRune(rune(curr))
 			return PResult{
 				int(curr - '0'), in.Cdr(), nil,
 			}
@@ -620,7 +619,7 @@ func Preceded(match, pre string) Parsec {
 }
 
 // Number asks if it can obtain a contiguous set of digits from the input stream
-// result is an integer
+// result is a possibly-negative integer
 func Number() Parsec {
 	return func(in ParserInput) PResult {
 
@@ -632,9 +631,8 @@ func Number() Parsec {
 			}
 		}
 
-		var numStr strings.Builder
-		numbers := []byte{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'}
-		digs := OneOf(numbers)
+		var num int
+		digs := Digit()
 		rem := in
 		var e error
 		checked, neg := false, false
@@ -648,12 +646,12 @@ func Number() Parsec {
 				rem = res.Rem
 				checked = true
 
-			} else {
+			} else { // every other time
 				res := digs(rem)
 				if res.Err == nil {
-					if s, ok := res.Result.(rune); ok {
-						numStr.WriteRune(s)
-						rem = rem.Cdr() // we could use either of `rem.Cdr()` or `res.rem` here because theyre thesame as the Parser `OneOf` eats only the `Car`
+					if s, ok := res.Result.(int); ok {
+						num = (num * 10) + s
+						rem = res.Rem // we could use either of `rem.Cdr()` or `res.rem` here because theyre thesame as the Parser `OneOf` eats only the `Car`
 					}
 				} else {
 					e = res.Err
@@ -664,7 +662,7 @@ func Number() Parsec {
 		}
 
 		//no digit was found, so no number
-		if numStr.String() == "" {
+		if num == 0 {
 			return PResult{
 				nil,
 				in,
@@ -672,12 +670,11 @@ func Number() Parsec {
 			}
 		}
 
-		ans, _ := strconv.Atoi(numStr.String()) // there can never be an error.
 		if neg {
-			ans = -ans
+			num = -num
 		}
 		return PResult{
-			ans,
+			num,
 			rem,
 			nil,
 		}

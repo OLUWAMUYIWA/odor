@@ -50,12 +50,15 @@ func TestBencStr(t *testing.T) {
 		R: bufio.NewReader(bytes.NewBuffer([]byte{'4', ':', 's', 'p', 'a', 'm', '5'})),
 	}
 	getStr := BencStr()
-	// expected := "spam"
+	expected := "spam"
 	res := getStr(b)
-	t.Errorf("Result: %v", res.Result)
-	// if res.Result.(string) != expected {
-	// 	t.Errorf("Expected: %s, got %s", expected, res.Result.(string))
-	// }
+	if res.Result.(string) != expected {
+		t.Errorf("Expected: %s, got %s", expected, res.Result.(string))
+	}
+
+	if n := res.Rem.Car(); n != '5' {
+		t.Errorf("Should be: %v, but is: %v", '5', n)
+	}
 
 }
 

@@ -132,6 +132,9 @@ func TestOneOf(t *testing.T) {
 	if reflect.DeepEqual(*(res.Rem.(*TestInput)), in) {
 		t.Errorf("should not be equal beacuse it got reduced")
 	}
+	if res.Result.(byte) != byte('d') {
+		t.Errorf("Should be%b, but is %b", byte('d'), res.Result.(byte))
+	}
 
 	if !reflect.DeepEqual(TestInput{in: []byte{'e', 'f'}}, *(res.Rem.(*TestInput))) {
 		t.Errorf("should  be equal beacuse it got reduced")
@@ -410,6 +413,7 @@ func TestStr(t *testing.T) {
 	} else {
 		t.Errorf("Could not convert to string")
 	}
+
 }
 
 func TestMany0(t *testing.T) {
@@ -940,7 +944,28 @@ func TestStrN(t *testing.T) {
 
 	// failure
 	in = &TestInput{
-		in: []byte{'a', '4', 'e', 'g', 'o', 'g', 'h', 'k'},
+		in: []byte{'a', 'b', 'e', 'g', 'o', 'g', 'h', 'k'},
+	}
+
+	em := '😀'
+	s := string(em)
+	emoji := []byte(s)
+	r := []byte{'a', 'b', 'e', 'g'}
+	r = append(r, emoji...)
+
+	// exp := &TestInput{
+	// 	in: []byte{'a', 'b', 'e', 'g', 240, 159, 152, 128}, // 240 159 152 128 is = '😀'
+	// }
+	expStr := "abeg😀"
+	in = &TestInput{
+		in: r,
+	}
+	strN := StrN(8)
+	res = strN(in)
+	resStr := res.Result.(string)
+
+	if resStr != expStr {
+		t.Errorf("Expected: %s, got: %s", expStr, resStr)
 	}
 
 }
